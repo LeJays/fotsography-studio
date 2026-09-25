@@ -1,0 +1,259 @@
+datasource db {
+  provider = "postgresql"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  ADMIN
+  PHOTOGRAPHER
+  VIDEOGRAPHER
+  EDITOR
+  ASSISTANT
+  CLIENT
+}
+
+enum ProjectStatus {
+  DRAFT
+  IN_PROGRESS
+  DELIVERED
+  CANCELLED
+}
+
+enum PaymentType {
+  ADVANCE_30
+  INTERMEDIATE_50
+  FINAL_20
+  CUSTOM
+}
+
+enum PaymentMethod {
+  CASH
+  MOMO
+  BANK
+}
+
+enum ReceiptType {
+  ADVANCE_30
+  INTERMEDIATE_50
+  FINAL_20
+  CUSTOM
+}
+
+enum TaskStatus {
+  PENDING
+  IN_REVIEW
+  COMPLETED
+}
+
+enum ActivityStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+}
+
+model User {
+  id                 String    @id @default(uuid())
+  name               String
+  email              String    @unique
+  phone              String
+  role               Role      @default(PHOTOGRAPHER)
+  password           String
+  isActive           Boolean   @default(true)
+  mustChangePassword Boolean   @default(false)
+  lastLoginAt        DateTime?
+  createdById        String?
+  createdBy          User?     @relation("UserCreatedMembers", fields: [createdById], references: [id])
+  createdMembers     User[]    @relation("UserCreatedMembers")
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  archivedAt         DateTime?
+
+  tasks            Task[]
+  receivedPayments Payment[]  @relation("PaymentReceivedBy")
+  receipts         Receipt[]
+  auditLogs        AuditLog[]
+  createdClients   Client[]
+  createdProjects  Project[]
+  createdExpenses  Expense[]
+
+  @@index([role, isActive])
+}
+
+model Client {
+  id          String    @id @default(uuid())
+  name        String
+  email       String?
+  phone       String
+  address     String?
+  notes       String?
+  createdById String?
+  createdBy   User?     @relation(fields: [createdById], references: [id])
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  archivedAt  DateTime?
+
+  projects Project[]
+
+  @@index([name])
+}
+
+model Project {
+  id                  String        @id @default(uuid())
+  clientId            String
+  client              Client        @relation(fields: [clientId], references: [id])
+  eventName           String
+  eventLocation       String
+  eventDate           DateTime
+  globalDeliveryDate  DateTime
+  totalAmount         Int
+  percentAdvance      Int           @default(30)
+  percentIntermediate Int           @default(50)
+  percentFinal        Int           @default(20)
+  advanceAmount       Int
+  intermediateAmount  Int
+  finalAmount         Int
+  status              ProjectStatus @default(IN_PROGRESS)
+  notes               String?
+  deliveredAt         DateTime?
+  createdById         String?
+  createdBy           User?         @relation(fields: [createdById], references: [id])
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+  archivedAt          DateTime?
+
+  activities Activity[]
+  payments   Payment[]
+  receipts   Receipt[]
+
+  @@index([clientId, status, eventDate])
+}
+
+model Payment {
+  id           String        @id @default(uuid())
+  projectId    String
+  project      Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  type         PaymentType
+  method       PaymentMethod @default(CASH)
+  amount       Int
+  paymentDate  DateTime      @default(now())
+  reference    String?
+  notes        String?
+  receivedById String?
+  receivedBy   User?         @relation("PaymentReceivedBy", fields: [receivedById], references: [id])
+  receipt      Receipt?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  archivedAt   DateTime?
+
+  @@index([projectId, paymentDate])
+}
+
+model Receipt {
+  id          String      @id @default(uuid())
+  number      String      @unique
+  type        ReceiptType
+  projectId   String
+  project     Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  paymentId   String?     @unique
+  payment     Payment?    @relation(fields: [paymentId], references: [id])
+  amount      Int
+  issuedAt    DateTime    @default(now())
+  snapshot    Json
+  createdById String?
+  createdBy   User?       @relation(fields: [createdById], references: [id])
+  createdAt   DateTime    @default(now())
+
+  @@index([projectId, issuedAt])
+}
+
+model Activity {
+  id           String    @id @default(uuid())
+  projectId    String
+  project      Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name         String
+  description  String?
+  deliveryDate DateTime?
+  order        Int       @default(0)
+  status       ActivityStatus @default(PENDING)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  archivedAt   DateTime?
+
+  expenses Expense[]
+  tasks    Task[]
+
+  @@index([projectId, order])
+}
+
+model Expense {
+  id          String    @id @default(uuid())
+  activityId  String
+  activity    Activity  @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  description String
+  supplier    String?
+  amount      Int
+  expenseDate DateTime  @default(now())
+  createdById String?
+  createdBy   User?     @relation(fields: [createdById], references: [id])
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  archivedAt  DateTime?
+
+  @@index([activityId, expenseDate])
+}
+
+model Task {
+  id                     String     @id @default(uuid())
+  activityId             String
+  activity               Activity   @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  assignedUserId         String
+  assignedUser           User       @relation(fields: [assignedUserId], references: [id])
+  name                   String
+  clientPriceShare       Int?
+  memberPayout           Int?
+  payoutPaidAt           DateTime?
+  deliveryDate           DateTime
+  deliveryDateOverridden Boolean    @default(false)
+  proofLink              String?
+  proofSubmittedAt       DateTime?
+  completedAt            DateTime?
+  status                 TaskStatus @default(PENDING)
+  createdAt              DateTime   @default(now())
+  updatedAt              DateTime   @updatedAt
+  archivedAt             DateTime?
+
+  @@index([assignedUserId, status])
+}
+
+model StudioSettings {
+  id                         String   @id @default("studio")
+  name                       String   @default("Fotsography Studio")
+  address                    String?
+  phone                      String?
+  email                      String?
+  registrationNumber         String?
+  currency                   String   @default("FCFA")
+  receiptPrefix              String   @default("FST")
+  defaultPercentAdvance      Int      @default(30)
+  defaultPercentIntermediate Int      @default(50)
+  defaultPercentFinal        Int      @default(20)
+  taskDeliveryLeadDays       Int      @default(5)
+  updatedAt                  DateTime @updatedAt
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  actorId   String?
+  actor     User?    @relation(fields: [actorId], references: [id])
+  action    String
+  entity    String
+  entityId  String?
+  payload   Json?
+  createdAt DateTime @default(now())
+
+  @@index([entity, entityId])
+  @@index([createdAt])
+}

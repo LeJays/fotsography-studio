@@ -1,0 +1,8 @@
+@import "tailwindcss";
+
+@theme {
+  --color-studio-dark: #3D2329;
+  --color-studio-gold: #F5B813;
+  --color-studio-terracotta: #9E4B29;
+  --color-studio-bg-light: #FDFBF7;
+}
