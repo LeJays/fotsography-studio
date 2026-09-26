@@ -22,15 +22,17 @@ const toProjectSummary = (project: {
   id: string; clientId: string; eventName: string; eventLocation: string; eventDate: Date; globalDeliveryDate: Date
   totalAmount: number; advanceAmount: number; intermediateAmount: number; finalAmount: number
   status: ProjectSummary['status']; createdAt: Date; client: { name: string }; payments: { amount: number }[]
-}): ProjectSummary => {
+}, includeAmounts: boolean): ProjectSummary => {
   const paidAmount = project.payments.reduce((total, payment) => total + payment.amount, 0)
   return {
     id: project.id, clientId: project.clientId, clientName: project.client.name,
     eventName: project.eventName, eventLocation: project.eventLocation,
     eventDate: project.eventDate.toISOString(), globalDeliveryDate: project.globalDeliveryDate.toISOString(),
-    totalAmount: project.totalAmount, advanceAmount: project.advanceAmount,
-    intermediateAmount: project.intermediateAmount, finalAmount: project.finalAmount,
-    status: project.status, paidAmount, remainingAmount: computeRemaining(project.totalAmount, paidAmount),
+    // L'assistant pilote les projets sans accéder aux montants.
+    totalAmount: includeAmounts ? project.totalAmount : 0, advanceAmount: includeAmounts ? project.advanceAmount : 0,
+    intermediateAmount: includeAmounts ? project.intermediateAmount : 0, finalAmount: includeAmounts ? project.finalAmount : 0,
+    status: project.status, paidAmount: includeAmounts ? paidAmount : 0,
+    remainingAmount: includeAmounts ? computeRemaining(project.totalAmount, paidAmount) : 0,
     createdAt: project.createdAt.toISOString(),
   }
 }
@@ -44,7 +46,7 @@ const listProjects = async (ctx: RouteContext): Promise<void> => {
     where: { archivedAt: null }, orderBy: { eventDate: 'desc' },
     include: { client: { select: { name: true } }, payments: { where: { archivedAt: null }, select: { amount: true } } },
   })
-  sendJson(ctx.res, 200, { projects: projects.map(toProjectSummary) })
+  sendJson(ctx.res, 200, { projects: projects.map((project) => toProjectSummary(project, ctx.actor?.role === 'ADMIN')) })
 }
 
 const getProject = async (ctx: RouteContext): Promise<void> => {
@@ -57,8 +59,10 @@ const getProject = async (ctx: RouteContext): Promise<void> => {
     include: { client: { select: { name: true } }, payments: { where: { archivedAt: null }, include: { receivedBy: { select: { name: true } } }, orderBy: { paymentDate: 'desc' } }, receipts: { orderBy: { issuedAt: 'desc' } }, activities: { where: { archivedAt: null }, include: { expenses: { where: { archivedAt: null }, orderBy: { expenseDate: 'asc' } } } } },
   })
   if (!project) throw new HttpError(404, 'Projet introuvable.')
-  const summary = toProjectSummary(project)
-  const detail: ProjectDetail = { ...summary, notes: project.notes, payments: project.payments.map(toPayment), receipts: project.receipts.map(toReceipt), expenses: project.activities.flatMap((activity) => activity.expenses.map((expense) => ({ id: expense.id, activityName: activity.name, description: expense.description, supplier: expense.supplier, amount: expense.amount, expenseDate: expense.expenseDate.toISOString() }))) }
+  const isAdmin = ctx.actor?.role === 'ADMIN'
+  const summary = toProjectSummary(project, isAdmin)
+  // Paiements, reçus et dépenses restent réservés à l'admin.
+  const detail: ProjectDetail = { ...summary, notes: project.notes, payments: isAdmin ? project.payments.map(toPayment) : [], receipts: isAdmin ? project.receipts.map(toReceipt) : [], expenses: isAdmin ? project.activities.flatMap((activity) => activity.expenses.map((expense) => ({ id: expense.id, activityName: activity.name, description: expense.description, supplier: expense.supplier, amount: expense.amount, expenseDate: expense.expenseDate.toISOString() }))) : [] }
   sendJson(ctx.res, 200, { project: detail })
 }
 
@@ -86,11 +90,11 @@ const createProject = async (ctx: RouteContext): Promise<void> => {
     }
   }
   await recordAudit({ actorId: ctx.actor?.id, action: 'project.create', entity: 'Project', entityId: project.id, payload: { clientId: project.clientId, eventName: project.eventName, advanceCollected: data.collectAdvanceNow !== false } })
-  sendJson(ctx.res, 201, { project: toProjectSummary(project) })
+  sendJson(ctx.res, 201, { project: toProjectSummary(project, true) })
 }
 
 export const projectRoutes: RouteDefinition[] = [
-  { method: 'GET', path: '/api/projects', auth: true, middlewares: [requireAuth, requireRole('ADMIN')], handler: listProjects },
-  { method: 'GET', path: '/api/projects/:id', auth: true, middlewares: [requireAuth, requireRole('ADMIN')], handler: getProject },
+  { method: 'GET', path: '/api/projects', auth: true, middlewares: [requireAuth, requireRole('ADMIN', 'ASSISTANT')], handler: listProjects },
+  { method: 'GET', path: '/api/projects/:id', auth: true, middlewares: [requireAuth, requireRole('ADMIN', 'ASSISTANT')], handler: getProject },
   { method: 'POST', path: '/api/projects', auth: true, middlewares: [requireAuth, requireRole('ADMIN'), validateBody(createProjectSchema)], handler: createProject },
 ]

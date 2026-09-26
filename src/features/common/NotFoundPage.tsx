@@ -3,8 +3,9 @@ import { Link } from 'react-router-dom';
 import { Button } from '../../components/ui';
 
 export const NotFoundPage: React.FC = () => (
-  <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-studio-dark px-6 text-center">
+  <div className="studio-panel-dark flex min-h-screen flex-col items-center justify-center gap-4 px-6 text-center">
     <p className="font-serif text-6xl font-bold text-studio-gold">404</p>
+    <span className="studio-accent-rule block h-1 w-16 rounded-full" aria-hidden="true" />
     <h1 className="font-serif text-2xl font-bold text-white">Page introuvable</h1>
     <p className="max-w-sm text-sm text-white/60">
       Cette adresse n'existe pas (ou plus). Revenez à votre espace de travail.

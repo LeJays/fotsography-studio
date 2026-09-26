@@ -16,6 +16,7 @@ import {
   Select,
   Textarea,
 } from '../../components/ui'
+import { useAuth } from '../../context/AuthContext'
 import {
   ApiError,
   archiveActivityApi,
@@ -28,6 +29,7 @@ import {
 
 /** Page de premier niveau : les activités d'un projet, puis la fiche de chaque activité. */
 export const ActivitiesPage = () => {
+  const { isAdmin } = useAuth()
   const [activities, setActivities] = useState<ActivitySummary[]>([])
   const [projects, setProjects] = useState<ProjectSummary[]>([])
   const [tasks, setTasks] = useState<TaskSummary[]>([])
@@ -130,9 +132,11 @@ export const ActivitiesPage = () => {
         title="Activités & tâches"
         subtitle="Choisissez une activité pour consulter son équipe et distribuer son travail."
         actions={
-          <Button onClick={openCreateModal} disabled={isLoading || projects.length === 0}>
-            <Plus className="h-4 w-4" /> Nouvelle activité
-          </Button>
+          isAdmin ? (
+            <Button onClick={openCreateModal} disabled={isLoading || projects.length === 0}>
+              <Plus className="h-4 w-4" /> Nouvelle activité
+            </Button>
+          ) : undefined
         }
       />
 
@@ -151,14 +155,23 @@ export const ActivitiesPage = () => {
           icon={<FolderKanban className="h-6 w-6" />}
           title="Aucune activité"
           description="Une activité regroupe les tâches d’un même événement, par exemple le shooting ou les retouches."
-          action={<Button onClick={openCreateModal} disabled={projects.length === 0}><Plus className="h-4 w-4" />Créer une activité</Button>}
+          action={isAdmin ? <Button onClick={openCreateModal} disabled={projects.length === 0}><Plus className="h-4 w-4" />Créer une activité</Button> : undefined}
         />
       ) : (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {activities.map((activity) => {
             const activityTaskCount = taskCounts.get(activity.id) ?? 0
             return (
-              <Card key={activity.id} className="flex h-full flex-col space-y-4">
+              <Card
+                key={activity.id}
+                className="group relative flex h-full flex-col gap-4 transition hover:-translate-y-0.5 hover:border-studio-gold/40 hover:shadow-md"
+              >
+                {/* Lien étiré : toute la carte ouvre la fiche de l’activité (les actions du bas restent cliquables). */}
+                <Link
+                  to={`/activites/${activity.id}`}
+                  aria-label={`Ouvrir l’activité ${activity.name}`}
+                  className="absolute -inset-px rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-studio-gold/50"
+                />
                 <div className="flex-1">
                   <p className="text-xs font-semibold uppercase tracking-wide text-studio-terracotta">
                     {activity.projectName}
@@ -176,25 +189,27 @@ export const ActivitiesPage = () => {
                       {activityTaskCount} {activityTaskCount > 1 ? 'tâches' : 'tâche'}
                   </Badge>
                   <Badge tone={activity.status === 'COMPLETED' ? 'green' : activity.status === 'IN_PROGRESS' ? 'gold' : 'gray'}>{activity.status === 'PENDING' ? 'En attente' : activity.status === 'IN_PROGRESS' ? 'En cours' : 'Terminée'}</Badge>
-                    <Badge tone={activity.expenseCount > 0 ? 'green' : 'gray'}>
-                      {formatAmount(activity.expenseAmount)} de dépenses
-                    </Badge>
+                    {isAdmin ? (
+                      <Badge tone={activity.expenseCount > 0 ? 'green' : 'gray'}>
+                        {formatAmount(activity.expenseAmount)} de dépenses
+                      </Badge>
+                    ) : null}
                   </div>
-                  <Link to={`/activites/${activity.id}`}>
-                    <Button variant="secondary" size="sm">
-                      Ouvrir <ArrowRight className="h-3.5 w-3.5" />
-                    </Button>
-                  </Link>
+                  <span className="inline-flex items-center justify-center gap-2 rounded-lg border border-studio-dark/15 bg-white px-3 py-1.5 text-xs font-semibold text-studio-dark transition group-hover:bg-studio-dark/5">
+                    Ouvrir <ArrowRight className="h-3.5 w-3.5" />
+                  </span>
                 </div>
 
-                <div className="flex flex-wrap gap-2 border-t border-studio-dark/10 pt-3">
-                  <Button variant="secondary" size="sm" onClick={() => openEditModal(activity)}>
-                    <Pencil className="h-3.5 w-3.5" /> Modifier
-                  </Button>
-                  <Button variant="danger" size="sm" onClick={() => void removeActivity(activity)}>
-                    <Trash2 className="h-3.5 w-3.5" /> Supprimer
-                  </Button>
-                </div>
+                {isAdmin ? (
+                  <div className="relative flex flex-wrap gap-2 border-t border-studio-dark/10 pt-3">
+                    <Button variant="secondary" size="sm" onClick={() => openEditModal(activity)}>
+                      <Pencil className="h-3.5 w-3.5" /> Modifier
+                    </Button>
+                    <Button variant="danger" size="sm" onClick={() => void removeActivity(activity)}>
+                      <Trash2 className="h-3.5 w-3.5" /> Supprimer
+                    </Button>
+                  </div>
+                ) : null}
               </Card>
             )
           })}

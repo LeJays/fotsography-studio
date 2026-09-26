@@ -5,4 +5,131 @@
   --color-studio-gold: #F5B813;
   --color-studio-terracotta: #9E4B29;
   --color-studio-bg-light: #FDFBF7;
+
+  /* Déclinaisons de la même palette (fonds, survols, dégradés). */
+  --color-studio-ink: #2B181D;
+  --color-studio-cream: #F6EFE4;
+
+  /* Ombres douces teintées studio (remplace les ombres grises par défaut). */
+  --shadow-studio-card: 0 1px 2px rgb(61 35 41 / 0.05), 0 14px 34px -22px rgb(61 35 41 / 0.35);
+  --shadow-studio-lift: 0 2px 6px rgb(61 35 41 / 0.07), 0 24px 48px -26px rgb(61 35 41 / 0.5);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Base : ambiance générale de l'application                                   */
+/* -------------------------------------------------------------------------- */
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background-color: var(--color-studio-bg-light);
+    color: var(--color-studio-dark);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  ::selection {
+    background-color: var(--color-studio-gold);
+    color: var(--color-studio-dark);
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Composants transverses                                                      */
+/* -------------------------------------------------------------------------- */
+
+@layer components {
+  /* Fond ambiant de l'espace connecté : deux halos très légers aux couleurs studio. */
+  .studio-ambient {
+    background-color: var(--color-studio-bg-light);
+    background-image:
+      radial-gradient(58rem 30rem at 6% -12%, rgb(245 184 19 / 0.13), transparent 60%),
+      radial-gradient(46rem 26rem at 104% 0%, rgb(158 75 41 / 0.09), transparent 62%);
+    background-repeat: no-repeat;
+  }
+
+  /* Panneaux sombres (barre latérale, chargement, page 404). */
+  .studio-panel-dark {
+    background-image:
+      radial-gradient(20rem 16rem at 108% -8%, rgb(245 184 19 / 0.16), transparent 62%),
+      radial-gradient(24rem 20rem at -18% 106%, rgb(158 75 41 / 0.3), transparent 64%),
+      linear-gradient(180deg, #3d2329 0%, #2b181d 100%);
+  }
+
+  /* Filet doré → terracotta sous les titres et en haut des cartes de statistiques. */
+  .studio-accent-rule {
+    background-image: linear-gradient(90deg, var(--color-studio-gold) 0%, var(--color-studio-terracotta) 100%);
+  }
+
+  /* Pastille d'icône (statistiques, états vides). */
+  .studio-icon-chip {
+    background-image: linear-gradient(135deg, rgb(245 184 19 / 0.3) 0%, rgb(158 75 41 / 0.16) 100%);
+  }
+
+  /* Chevron des <select> : conserve une flèche lisible malgré `appearance-none`. */
+  .studio-select {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%233D2329' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.7rem center;
+    background-size: 1rem 1rem;
+  }
+
+  /* Tableaux : zébrage discret et survol doré. */
+  .studio-table tbody tr {
+    transition: background-color 0.15s ease;
+  }
+
+  .studio-table tbody tr:nth-child(even) {
+    background-color: rgb(61 35 41 / 0.02);
+  }
+
+  .studio-table tbody tr:hover {
+    background-color: rgb(245 184 19 / 0.1);
+  }
+
+  /* Apparition douce des contenus de page. */
+  .studio-rise {
+    animation: studio-rise 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  /* Barre de défilement discrète. */
+  .studio-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(61 35 41 / 0.25) transparent;
+  }
+
+  .studio-scroll::-webkit-scrollbar {
+    height: 10px;
+    width: 10px;
+  }
+
+  .studio-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .studio-scroll::-webkit-scrollbar-thumb {
+    background-color: rgb(61 35 41 / 0.22);
+    background-clip: content-box;
+    border: 3px solid transparent;
+    border-radius: 9999px;
+  }
+
+  .studio-scroll::-webkit-scrollbar-thumb:hover {
+    background-color: rgb(61 35 41 / 0.35);
+  }
+}
+
+@keyframes studio-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }

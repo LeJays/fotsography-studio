@@ -8,9 +8,11 @@ import type { RouteContext, RouteDefinition } from '../router.ts'
 import { recordAudit } from '../services/audit.ts'
 
 const listActivities = async (ctx: RouteContext): Promise<void> => {
+  const isAdmin = ctx.actor?.role === 'ADMIN'
   const projectId = ctx.url.searchParams.get('projectId') ?? undefined
   const activities = await prisma.activity.findMany({ where: { archivedAt: null, ...(projectId ? { projectId } : {}) }, include: { project: { select: { eventName: true } }, expenses: { where: { archivedAt: null }, select: { amount: true } } }, orderBy: { createdAt: 'asc' } })
-  const result: ActivitySummary[] = activities.map((activity) => ({ id: activity.id, projectId: activity.projectId, projectName: activity.project.eventName, name: activity.name, description: activity.description, status: activity.status, expenseCount: activity.expenses.length, expenseAmount: activity.expenses.reduce((total, expense) => total + expense.amount, 0) }))
+  // Montants de dépenses réservés à l'admin (l'assistant voit le reste de l'activité).
+  const result: ActivitySummary[] = activities.map((activity) => ({ id: activity.id, projectId: activity.projectId, projectName: activity.project.eventName, name: activity.name, description: activity.description, status: activity.status, expenseCount: activity.expenses.length, expenseAmount: isAdmin ? activity.expenses.reduce((total, expense) => total + expense.amount, 0) : 0 }))
   sendJson(ctx.res, 200, { activities: result })
 }
 const createActivity = async (ctx: RouteContext): Promise<void> => {
@@ -38,7 +40,7 @@ const archiveActivity = async (ctx: RouteContext): Promise<void> => {
   sendJson(ctx.res, 204, {})
 }
 export const activityRoutes: RouteDefinition[] = [
-  { method: 'GET', path: '/api/activities', auth: true, middlewares: [requireAuth, requireRole('ADMIN')], handler: listActivities },
+  { method: 'GET', path: '/api/activities', auth: true, middlewares: [requireAuth, requireRole('ADMIN', 'ASSISTANT')], handler: listActivities },
   { method: 'POST', path: '/api/activities', auth: true, middlewares: [requireAuth, requireRole('ADMIN'), validateBody(createActivitySchema)], handler: createActivity },
   { method: 'PATCH', path: '/api/activities/:id', auth: true, middlewares: [requireAuth, requireRole('ADMIN'), validateBody(updateActivitySchema)], handler: updateActivity },
   { method: 'DELETE', path: '/api/activities/:id', auth: true, middlewares: [requireAuth, requireRole('ADMIN')], handler: archiveActivity },

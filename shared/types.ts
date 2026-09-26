@@ -60,6 +60,14 @@ export interface CreateUserPayload {
   password: string
 }
 
+/** Membre proposé pour l'assignation d'une tâche (admin + assistant) — sans coordonnées personnelles. */
+export interface AssignableUser {
+  id: string
+  name: string
+  role: AuthRole
+  isActive: boolean
+}
+
 export interface UpdateUserPayload {
   name?: string
   phone?: string
@@ -256,6 +264,27 @@ export interface ExpenseSummary {
   createdByName: string | null
 }
 
+export interface TaskPayoutSummary {
+  id: string
+  amount: number
+  method: PaymentMethod
+  reference: string | null
+  note: string | null
+  receiptNumber: string | null
+  paidAt: string
+  paidByName: string | null
+}
+
+export type TaskReviewDecision = 'APPROVED' | 'RETURNED'
+
+export interface TaskReviewSummary {
+  id: string
+  decision: TaskReviewDecision
+  note: string | null
+  reviewedAt: string
+  reviewedByName: string | null
+}
+
 export interface TaskSummary {
   id: string
   name: string
@@ -270,6 +299,26 @@ export interface TaskSummary {
   memberPayout: number | null
   payoutPaidAt: string | null
   clientPriceShare?: number | null
+  /** Historique des versements — visible uniquement par l'admin et l'assigné. */
+  payouts?: TaskPayoutSummary[]
+  /** Total déjà versé — visible uniquement par l'admin et l'assigné. */
+  paidPayout?: number
+  /** Reste à verser — visible uniquement par l'admin et l'assigné. */
+  payoutRemaining?: number
+  /** Historique des validations/renvois par l'admin. */
+  reviews?: TaskReviewSummary[]
+}
+
+export interface PayoutTaskPayload {
+  amount: number
+  method?: PaymentMethod
+  reference?: string
+  note?: string
+}
+
+export interface ReviewTaskPayload {
+  decision: TaskReviewDecision
+  note?: string
 }
 
 export interface CreateActivityPayload { projectId: string; name: string; description?: string }

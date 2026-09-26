@@ -48,6 +48,11 @@ enum TaskStatus {
   COMPLETED
 }
 
+enum TaskReviewDecision {
+  APPROVED
+  RETURNED
+}
+
 enum ActivityStatus {
   PENDING
   IN_PROGRESS
@@ -72,6 +77,8 @@ model User {
   archivedAt         DateTime?
 
   tasks            Task[]
+  taskPayouts      TaskPayout[]
+  taskReviews      TaskReview[]
   receivedPayments Payment[]  @relation("PaymentReceivedBy")
   receipts         Receipt[]
   auditLogs        AuditLog[]
@@ -225,7 +232,43 @@ model Task {
   updatedAt              DateTime   @updatedAt
   archivedAt             DateTime?
 
+  payouts  TaskPayout[]
+  reviews  TaskReview[]
+
   @@index([assignedUserId, status])
+}
+
+/** Versement (total ou tranche) de la rémunération d'un membre pour une tâche. */
+model TaskPayout {
+  id            String        @id @default(uuid())
+  taskId        String
+  task          Task          @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  amount        Int
+  method        PaymentMethod @default(CASH)
+  reference     String?
+  note          String?
+  receiptNumber String?
+  paidAt        DateTime      @default(now())
+  paidById      String?
+  paidBy        User?         @relation(fields: [paidById], references: [id])
+  createdAt     DateTime      @default(now())
+
+  @@index([taskId, paidAt])
+}
+
+/** Validation (approbation) ou renvoi (avec corrections demandées) d'une tâche terminée par l'admin. */
+model TaskReview {
+  id           String             @id @default(uuid())
+  taskId       String
+  task         Task               @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  decision     TaskReviewDecision
+  note         String?
+  reviewedAt   DateTime           @default(now())
+  reviewedById String?
+  reviewedBy   User?              @relation(fields: [reviewedById], references: [id])
+  createdAt    DateTime           @default(now())
+
+  @@index([taskId, reviewedAt])
 }
 
 model StudioSettings {

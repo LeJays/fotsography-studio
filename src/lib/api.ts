@@ -1,4 +1,5 @@
 import type {
+  AssignableUser,
   AuthResponse,
   ChangePasswordPayload,
   ClientDetail,
@@ -22,6 +23,8 @@ import type {
   UpdateUserPayload,
   UpdateExpensePayload,
   PaymentSummary,
+  PayoutTaskPayload,
+  ReviewTaskPayload,
   FinanceOverview,
   OperationsOverview,
   UserSummary,
@@ -100,6 +103,8 @@ export const changePasswordApi = (payload: ChangePasswordPayload): Promise<AuthR
 /* ------------------------------------ Équipe ------------------------------------ */
 
 export const fetchUsers = (): Promise<{ users: UserSummary[] }> => apiGet<{ users: UserSummary[] }>('/api/users');
+/** Membres assignables à une tâche (admin + assistant) : id, nom, rôle, sans coordonnées. */
+export const fetchAssignableUsers = (): Promise<{ users: AssignableUser[] }> => apiGet<{ users: AssignableUser[] }>('/api/users/assignable');
 export const createUserApi = (payload: CreateUserPayload): Promise<{ user: UserSummary }> =>
   apiPost<{ user: UserSummary }>('/api/users', payload);
 export const updateUserApi = (
@@ -149,9 +154,14 @@ export const createActivityApi = (payload: CreateActivityPayload): Promise<{ act
 export const updateActivityApi = (id: string, payload: Partial<CreateActivityPayload>): Promise<{ activity: ActivitySummary }> => apiPatch(`/api/activities/${id}`, payload);
 export const archiveActivityApi = (id: string): Promise<void> => apiDelete(`/api/activities/${id}`);
 export const fetchTasks = (activityId?: string): Promise<{ tasks: TaskSummary[] }> => apiGet(activityId ? `/api/tasks?activityId=${activityId}` : '/api/tasks');
+/** Tâches attribuées à l'utilisateur connecté, quel que soit son rôle (page « Mes tâches »). */
+export const fetchMyTasks = (): Promise<{ tasks: TaskSummary[] }> => apiGet('/api/tasks?mine=true');
 export const fetchTask = (id: string): Promise<{ task: TaskSummary }> => apiGet(`/api/tasks/${id}`);
 export const updateOwnTaskApi = (id: string, payload: { status: TaskSummary['status']; proofLink?: string }): Promise<{ task: TaskSummary }> => apiPatch(`/api/tasks/${id}/progress`, payload);
-export const payTaskPayoutApi = (id: string): Promise<{ task: TaskSummary }> => apiPost(`/api/tasks/${id}/payout`);
+/** Versement total ou partiel de la rémunération — l'historique des tranches est conservé côté serveur. */
+export const payTaskPayoutApi = (id: string, payload: PayoutTaskPayload): Promise<{ task: TaskSummary }> => apiPost(`/api/tasks/${id}/payout`, payload);
+/** Validation ou renvoi (avec raison et corrections) d'une tâche terminée — réservé à l'admin. */
+export const reviewTaskApi = (id: string, payload: ReviewTaskPayload): Promise<{ task: TaskSummary }> => apiPost(`/api/tasks/${id}/review`, payload);
 export const createTaskApi = (payload: CreateTaskPayload): Promise<{ task: TaskSummary }> => apiPost('/api/tasks', payload);
 export const updateTaskApi = (id: string, payload: Partial<CreateTaskPayload>): Promise<{ task: TaskSummary }> => apiPatch(`/api/tasks/${id}`, payload);
 export const archiveTaskApi = (id: string): Promise<void> => apiDelete(`/api/tasks/${id}`);

@@ -1,25 +1,201 @@
-import { useCallback, useEffect, useState } from 'react'
-import { ArrowLeft, CalendarDays, CheckCircle2, ExternalLink, Wallet } from 'lucide-react'
+import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { ArrowLeft, CalendarDays, CheckCircle2, Download, ExternalLink, Undo2, Wallet } from 'lucide-react'
 import { Link, useParams } from 'react-router-dom'
 import { formatDate } from '../../../shared/dates.ts'
 import { formatAmount } from '../../../shared/money.ts'
-import type { TaskSummary } from '../../../shared/types.ts'
-import { Alert, Badge, Button, Card, Field, Input, PageHeader, Select, StatCard } from '../../components/ui'
+import type { PaymentMethod, TaskSummary } from '../../../shared/types.ts'
+import { Alert, Button, Card, Field, Input, Modal, PageHeader, Select, StatCard, TableWrapper, Td, Textarea, Th } from '../../components/ui'
 import { useAuth } from '../../context/AuthContext'
-import { ApiError, fetchTask, payTaskPayoutApi, updateOwnTaskApi } from '../../lib/api'
+import { ApiError, fetchTask, payTaskPayoutApi, reviewTaskApi, updateOwnTaskApi } from '../../lib/api'
+import { downloadTaskPayoutReceipt } from '../../lib/receiptPdf'
+import { lastReview, nextStatus, StatusPill, STATUS_LABELS } from './taskStatus'
 
-const labels: Record<TaskSummary['status'], string> = { PENDING: 'À faire', IN_REVIEW: 'En cours', COMPLETED: 'Terminée' }
-const tones: Record<TaskSummary['status'], 'gray' | 'gold' | 'green'> = { PENDING: 'gray', IN_REVIEW: 'gold', COMPLETED: 'green' }
+const METHOD_LABELS: Record<PaymentMethod, string> = { CASH: 'Espèces', MOMO: 'Mobile Money', BANK: 'Virement' }
 
 export const TaskDetailPage = () => {
   const { id } = useParams<{ id: string }>(); const { user, isAdmin } = useAuth()
   const [task, setTask] = useState<TaskSummary | null>(null); const [error, setError] = useState(''); const [feedback, setFeedback] = useState(''); const [loading, setLoading] = useState(true); const [saving, setSaving] = useState(false)
-  const load = useCallback(async () => { if (!id) return; try { setTask((await fetchTask(id)).task); setError('') } catch (reason) { setError(reason instanceof ApiError ? reason.message : 'Chargement de la tâche impossible.') } finally { setLoading(false) } }, [id])
+  // Retour de l'admin (raison + corrections demandées)
+  const [returnOpen, setReturnOpen] = useState(false); const [returnNote, setReturnNote] = useState('')
+  // Versement de la rémunération (total ou tranche)
+  const [payoutAmount, setPayoutAmount] = useState(''); const [payoutMethod, setPayoutMethod] = useState<PaymentMethod>('CASH'); const [payoutReference, setPayoutReference] = useState(''); const [payoutNote, setPayoutNote] = useState('')
+  const load = useCallback(async () => { if (!id) return; try { setTask((await fetchTask(id)).task); setPayoutAmount(''); setError('') } catch (reason) { setError(reason instanceof ApiError ? reason.message : 'Chargement de la tâche impossible.') } finally { setLoading(false) } }, [id])
   useEffect(() => { void load() }, [load])
-  const saveProgress = async (form: FormData) => { if (!task) return; const status = String(form.get('status')) as TaskSummary['status']; const proofLink = String(form.get('proofLink') ?? '').trim(); if (status === 'COMPLETED' && !proofLink) { setError('Ajoutez le lien de la photo ou de la vidéo avant de terminer la tâche.'); return } setSaving(true); try { await updateOwnTaskApi(task.id, { status, proofLink }); setFeedback('Avancement mis à jour.'); await load() } catch (reason) { setError(reason instanceof ApiError ? reason.message : 'Mise à jour impossible.') } finally { setSaving(false) } }
-  const pay = async () => { if (!task || !window.confirm(`Confirmer le paiement de ${formatAmount(task.memberPayout ?? 0)} ?`)) return; setSaving(true); try { await payTaskPayoutApi(task.id); setFeedback('Rémunération marquée comme payée et ajoutée aux finances.'); await load() } catch (reason) { setError(reason instanceof ApiError ? reason.message : 'Paiement impossible.') } finally { setSaving(false) } }
+  // Pré-remplit le montant du prochain versement avec le reste à payer.
+  useEffect(() => { if (task && payoutAmount === '') setPayoutAmount(String(task.payoutRemaining ?? 0)) }, [task, payoutAmount])
+  const saveProgress = async (form: FormData) => { if (!task) return; const status = String(form.get('status')) as TaskSummary['status']; const proofLink = String(form.get('proofLink') ?? '').trim(); if (status === 'COMPLETED' && !proofLink && !task.proofLink) { setError('Ajoutez le lien de la photo ou de la vidéo avant de terminer la tâche.'); return } setSaving(true); try { await updateOwnTaskApi(task.id, { status, ...(proofLink ? { proofLink } : {}) }); setFeedback('Avancement mis à jour.'); await load() } catch (reason) { setError(reason instanceof ApiError ? reason.message : 'Mise à jour impossible.') } finally { setSaving(false) } }
+  /** Cycle du badge en haut à droite : À faire → En cours → Terminée. */
+  const cycle = async (current: TaskSummary) => { if (saving) return; const target = nextStatus(current.status); if (target === 'COMPLETED' && !current.proofLink) { setError('Ajoutez d’abord le lien de la preuve (formulaire « Avancement » ci-dessous) avant de terminer la tâche.'); return } setSaving(true); try { await updateOwnTaskApi(current.id, { status: target }); setFeedback(`Statut mis à jour : ${STATUS_LABELS[target]}.`); await load() } catch (reason) { setError(reason instanceof ApiError ? reason.message : 'Mise à jour impossible.') } finally { setSaving(false) } }
+  const approve = async () => { if (!task || !window.confirm('Valider définitivement cette tâche ? Son statut sera verrouillé pour le membre.')) return; setSaving(true); try { await reviewTaskApi(task.id, { decision: 'APPROVED' }); setFeedback('Tâche validée.'); await load() } catch (reason) { setError(reason instanceof ApiError ? reason.message : 'Validation impossible.') } finally { setSaving(false) } }
+  const sendBack = async () => { if (!task) return; const note = returnNote.trim(); if (!note) { setError('Décrivez la raison du renvoi et les corrections attendues.'); return } setSaving(true); try { await reviewTaskApi(task.id, { decision: 'RETURNED', note }); setFeedback('Tâche renvoyée au membre avec vos instructions.'); setReturnOpen(false); setReturnNote(''); await load() } catch (reason) { setError(reason instanceof ApiError ? reason.message : 'Renvoi impossible.') } finally { setSaving(false) } }
+  const pay = async (event: FormEvent) => { event.preventDefault(); if (!task) return; const amount = Math.round(Number(payoutAmount)); const rest = task.payoutRemaining ?? 0; if (!amount || amount <= 0) { setError('Indiquez le montant du versement.'); return } if (amount > rest) { setError(`Le montant dépasse le reste à payer (${formatAmount(rest)}).`); return } setSaving(true); try { await payTaskPayoutApi(task.id, { amount, method: payoutMethod, reference: payoutReference.trim() || undefined, note: payoutNote.trim() || undefined }); setFeedback(`Versement de ${formatAmount(amount)} enregistré.`); setPayoutReference(''); setPayoutNote(''); await load() } catch (reason) { setError(reason instanceof ApiError ? reason.message : 'Paiement impossible.') } finally { setSaving(false) } }
   if (loading) return <Card className="p-12 text-center text-sm text-studio-dark/55">Chargement de la tâche…</Card>
   if (!task) return <div className="space-y-4"><Alert tone="error">{error || 'Tâche introuvable.'}</Alert><Link to="/mes-taches"><Button variant="secondary"><ArrowLeft className="h-4 w-4" />Retour</Button></Link></div>
   const isAssignee = user?.id === task.assignedUserId
-  return <div className="space-y-6"><Link to={isAdmin ? `/activites/${task.activityId}` : '/mes-taches'} className="inline-flex items-center gap-1 text-sm text-studio-terracotta hover:underline"><ArrowLeft className="h-4 w-4" />Retour aux tâches</Link><PageHeader title={task.name} subtitle={`${task.projectName} · ${task.activityName}`} actions={<Badge tone={tones[task.status]}>{labels[task.status]}</Badge>} />{error ? <Alert tone="error">{error}</Alert> : null}{feedback ? <Alert tone="success">{feedback}</Alert> : null}<div className="grid gap-4 md:grid-cols-3"><StatCard label="Statut" value={labels[task.status]} /><StatCard label="À livrer le" value={formatDate(task.deliveryDate)} icon={<CalendarDays className="h-5 w-5" />} /><StatCard label="Responsable" value={task.assignedUserName} /></div><Card className="space-y-3"><h2 className="font-serif text-xl font-bold">Informations de la tâche</h2><p><strong>Projet :</strong> {task.projectName}</p><p><strong>Activité :</strong> {task.activityName}</p>{task.proofLink ? <p><strong>Preuve :</strong> <a className="inline-flex items-center gap-1 text-studio-terracotta underline" href={task.proofLink} target="_blank" rel="noreferrer">Ouvrir la photo ou vidéo <ExternalLink className="h-3.5 w-3.5" /></a></p> : <p className="text-studio-dark/55">Aucune preuve envoyée pour le moment.</p>}</Card><Card className="flex flex-wrap items-center justify-between gap-4"><div><h2 className="font-serif text-xl font-bold">Ma rémunération</h2><p className="mt-1 text-sm text-studio-dark/60">Montant prévu : {formatAmount(task.memberPayout ?? 0)}</p><p className={task.payoutPaidAt ? 'mt-1 text-sm font-semibold text-green-700' : 'mt-1 text-sm font-semibold text-studio-terracotta'}>{task.payoutPaidAt ? `Payée le ${formatDate(task.payoutPaidAt)}` : 'En attente de paiement'}</p></div>{isAdmin ? (!task.payoutPaidAt ? <Button onClick={() => void pay()} disabled={task.status !== 'COMPLETED' || !task.memberPayout} loading={saving}><Wallet className="h-4 w-4" />Marquer comme payée</Button> : <Badge tone="green">Payée</Badge>) : null}</Card>{isAssignee && !isAdmin ? <Card><h2 className="font-serif text-xl font-bold">Mettre à jour mon travail</h2><form className="mt-4 space-y-4" action={(form) => void saveProgress(form)}><Field label="Statut"><Select name="status" defaultValue={task.status}><option value="PENDING">À faire</option><option value="IN_REVIEW">En cours</option><option value="COMPLETED">Terminée</option></Select></Field><Field label="Preuve - lien vers une photo ou vidéo"><Input name="proofLink" type="url" defaultValue={task.proofLink ?? ''} placeholder="https://drive.google.com/..." /></Field><p className="text-xs text-studio-dark/55">Ajoute le lien de partage de ta photo ou vidéo. Cette preuve devient obligatoire quand tu choisis « Terminée ».</p><Button type="submit" loading={saving}><CheckCircle2 className="h-4 w-4" />Enregistrer l’avancement</Button></form></Card> : null}</div>
+  const review = lastReview(task)
+  const approved = review?.decision === 'APPROVED' && task.status === 'COMPLETED'
+  const pendingReview = isAdmin && task.status === 'COMPLETED' && !approved
+  const returnedNotice = review?.decision === 'RETURNED' && task.status !== 'COMPLETED'
+  const remaining = task.payoutRemaining ?? 0
+  const paidPayout = task.paidPayout ?? 0
+  const payouts = task.payouts ?? []
+  return (
+    <div className="space-y-6">
+      <Link to={isAssignee ? '/mes-taches' : `/activites/${task.activityId}`} className="inline-flex items-center gap-1 text-sm text-studio-terracotta hover:underline"><ArrowLeft className="h-4 w-4" />Retour aux tâches</Link>
+      <PageHeader
+        title={task.name}
+        subtitle={`${task.projectName} · ${task.activityName}`}
+        actions={<StatusPill task={task} onCycle={isAssignee ? cycle : undefined} />}
+      />
+      {error ? <Alert tone="error">{error}</Alert> : null}
+      {feedback ? <Alert tone="success">{feedback}</Alert> : null}
+      {returnedNotice ? (
+        <Alert tone="warning" title={`Tâche renvoyée par ${review?.reviewedByName ?? 'l’admin'} le ${formatDate(review?.reviewedAt ?? task.deliveryDate)}`}>
+          {review?.note}
+        </Alert>
+      ) : null}
+      {approved ? (
+        <Alert tone="success" title="Tâche validée">
+          Validée par {review?.reviewedByName ?? 'l’admin'} le {formatDate(review?.reviewedAt ?? task.deliveryDate)}.
+        </Alert>
+      ) : null}
+      {pendingReview ? (
+        <Card className="flex flex-wrap items-center justify-between gap-4 border-studio-gold/40 bg-studio-gold/10">
+          <div>
+            <h2 className="font-serif text-xl font-bold">Tâche terminée — à contrôler</h2>
+            <p className="text-sm text-studio-dark/60">Validez le travail, ou renvoyez-le au membre en précisant la raison et les corrections attendues.</p>
+          </div>
+          <div className="flex gap-2">
+            <Button onClick={() => void approve()} disabled={saving}><CheckCircle2 className="h-4 w-4" />Valider</Button>
+            <Button variant="secondary" onClick={() => { setReturnNote(''); setReturnOpen(true) }} disabled={saving}><Undo2 className="h-4 w-4" />Renvoyer</Button>
+          </div>
+        </Card>
+      ) : null}
+      <div className="grid gap-4 md:grid-cols-3">
+        <StatCard label="Statut" value={STATUS_LABELS[task.status]} />
+        <StatCard label="À livrer le" value={formatDate(task.deliveryDate)} icon={<CalendarDays className="h-5 w-5" />} />
+        <StatCard label="Responsable" value={task.assignedUserName} />
+      </div>
+      <Card className="space-y-3">
+        <h2 className="font-serif text-xl font-bold">Informations de la tâche</h2>
+        <p><strong>Projet :</strong> {task.projectName}</p>
+        <p><strong>Activité :</strong> {task.activityName}</p>
+        {task.proofLink ? <p><strong>Preuve :</strong> <a className="inline-flex items-center gap-1 text-studio-terracotta underline" href={task.proofLink} target="_blank" rel="noreferrer">Ouvrir la photo ou vidéo <ExternalLink className="h-3.5 w-3.5" /></a></p> : <p className="text-studio-dark/55">Aucune preuve envoyée pour le moment.</p>}
+      </Card>
+      <form action={saveProgress} className="grid gap-4 rounded-3xl border border-studio-dark/10 bg-white p-6 shadow-sm md:grid-cols-3">
+        <Field label="Avancement" htmlFor="status">
+          <Select name="status" id="status" key={task.status} defaultValue={task.status}>
+            <option value="PENDING">À faire</option>
+            <option value="IN_REVIEW">En cours</option>
+            <option value="COMPLETED">Terminée</option>
+          </Select>
+        </Field>
+        <Field label="Lien de la preuve (photo ou vidéo)" htmlFor="proofLink">
+          <Input name="proofLink" id="proofLink" type="url" placeholder="https://…" defaultValue={task.proofLink ?? ''} />
+        </Field>
+        <div className="flex items-end">
+          <Button type="submit" loading={saving} disabled={!isAssignee}>Mettre à jour</Button>
+        </div>
+      </form>
+      {isAssignee || isAdmin ? (
+        <Card className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="font-serif text-xl font-bold">{isAdmin ? 'Rémunération de la tâche' : 'Ma rémunération'}</h2>
+              <p className="mt-1 text-sm text-studio-dark/60">Montant prévu : {task.memberPayout ? formatAmount(task.memberPayout) : 'aucune rémunération'}</p>
+            </div>
+            <p className={!task.memberPayout ? 'text-sm text-studio-dark/50' : remaining === 0 && paidPayout > 0 ? 'text-sm font-semibold text-green-700' : 'text-sm font-semibold text-studio-terracotta'}>
+              {!task.memberPayout ? 'Aucune rémunération' : paidPayout > 0 ? `Versé ${formatAmount(paidPayout)} · reste ${formatAmount(remaining)}` : 'En attente de paiement'}
+            </p>
+          </div>
+          {isAdmin ? (
+            !task.memberPayout ? (
+              <p className="border-t border-studio-dark/10 pt-4 text-sm text-studio-dark/55">Aucune rémunération membre n’est prévue pour cette tâche.</p>
+            ) : remaining > 0 ? (
+              <form onSubmit={pay} className="grid gap-3 border-t border-studio-dark/10 pt-4 md:grid-cols-2">
+                <Field label={`Montant à verser — reste ${formatAmount(remaining)}`} htmlFor="payoutAmount">
+                  <Input id="payoutAmount" type="number" min={1} max={remaining} required value={payoutAmount} onChange={(event) => setPayoutAmount(event.target.value)} />
+                </Field>
+                <Field label="Moyen de paiement" htmlFor="payoutMethod">
+                  <Select id="payoutMethod" value={payoutMethod} onChange={(event) => setPayoutMethod(event.target.value as PaymentMethod)}>
+                    <option value="CASH">Espèces</option>
+                    <option value="MOMO">Mobile Money</option>
+                    <option value="BANK">Virement bancaire</option>
+                  </Select>
+                </Field>
+                <Field label="Référence (facultatif)" htmlFor="payoutReference">
+                  <Input id="payoutReference" placeholder="N° transaction…" value={payoutReference} onChange={(event) => setPayoutReference(event.target.value)} />
+                </Field>
+                <Field label="Note (facultatif)" htmlFor="payoutNote">
+                  <Input id="payoutNote" placeholder="Contexte du versement…" value={payoutNote} onChange={(event) => setPayoutNote(event.target.value)} />
+                </Field>
+                <div className="md:col-span-2">
+                  <Button type="submit" loading={saving}><Wallet className="h-4 w-4" />Enregistrer le versement{Math.round(Number(payoutAmount)) > 0 ? ` de ${formatAmount(Math.round(Number(payoutAmount)))}` : ''}</Button>
+                </div>
+              </form>
+            ) : (
+              <p className="border-t border-studio-dark/10 pt-4 text-sm font-semibold text-green-700">Rémunération entièrement payée.</p>
+            )
+          ) : null}
+          <div className="border-t border-studio-dark/10 pt-4">
+            <h3 className="font-serif text-lg font-bold">Historique des versements</h3>
+            {payouts.length === 0 ? (
+              <p className="mt-2 text-sm text-studio-dark/55">Aucun versement enregistré pour le moment.</p>
+            ) : (
+              <TableWrapper className="mt-2">
+                <thead>
+                  <tr><Th>Date</Th><Th>Montant</Th><Th>Moyen</Th><Th>Référence</Th><Th>Par</Th><Th>Reçu</Th></tr>
+                </thead>
+                <tbody>
+                  {payouts.map((payout) => (
+                    <tr key={payout.id}>
+                      <Td>{formatDate(payout.paidAt)}</Td>
+                      <Td><strong>{formatAmount(payout.amount)}</strong></Td>
+                      <Td>{METHOD_LABELS[payout.method]}</Td>
+                      <Td>{payout.reference || '—'}</Td>
+                      <Td>{payout.paidByName || '—'}</Td>
+                      <Td>
+                        {payout.receiptNumber ? (
+                          <Button size="sm" variant="secondary" onClick={() => void downloadTaskPayoutReceipt(task, payout)}><Download className="h-3.5 w-3.5" /> PDF</Button>
+                        ) : (
+                          <span className="text-xs text-studio-dark/45">Indisponible</span>
+                        )}
+                      </Td>
+                    </tr>
+                  ))}
+                </tbody>
+              </TableWrapper>
+            )}
+          </div>
+        </Card>
+      ) : null}
+      <Modal
+        open={returnOpen}
+        title="Renvoyer la tâche"
+        subtitle={`Précisez la raison du renvoi et ce qu'il faut modifier sur le travail de ${task.assignedUserName}.`}
+        onClose={() => setReturnOpen(false)}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setReturnOpen(false)}>Annuler</Button>
+            <Button onClick={() => void sendBack()} loading={saving}><Undo2 className="h-4 w-4" />Renvoyer au membre</Button>
+          </>
+        }
+      >
+        <form onSubmit={(event) => { event.preventDefault(); void sendBack() }} className="space-y-4">
+          <Field label="Raison du renvoi et corrections demandées" htmlFor="returnNote">
+            <Textarea
+              id="returnNote"
+              required
+              autoFocus
+              rows={5}
+              placeholder="Ex. : le cadrage de la 3e photo est floue, recadrer ; ajouter la version horizontale de la vidéo de clôture…"
+              value={returnNote}
+              onChange={(event) => setReturnNote(event.target.value)}
+            />
+          </Field>
+          <p className="text-xs text-studio-dark/50">La tâche repassera en « À faire » et votre note s’affichera sur la fiche du membre.</p>
+        </form>
+      </Modal>
+    </div>
+  )
 }

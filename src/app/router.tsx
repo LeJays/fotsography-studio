@@ -30,14 +30,21 @@ export const router = createBrowserRouter([
           { path: '/mes-taches', element: <MyTasksPage /> },
           { path: '/taches/:id', element: <TaskDetailPage /> },
           {
-            element: <RequireRole roles={['ADMIN']} />,
+            // Pilotage opérationnel : l'assistant voit tous les projets, activités et tâches.
+            element: <RequireRole roles={['ADMIN', 'ASSISTANT']} />,
             children: [
-              { path: '/clients', element: <ClientsPage /> },
-              { path: '/clients/:id', element: <ClientDetailPage /> },
               { path: '/projets', element: <ProjectsPage /> },
               { path: '/projets/:id', element: <ProjectDetailPage /> },
               { path: '/taches', element: <ActivitiesPage /> },
               { path: '/activites/:id', element: <ActivityDetailPage /> },
+            ],
+          },
+          {
+            // Données financières, clients, équipe et réglages : administrateur uniquement.
+            element: <RequireRole roles={['ADMIN']} />,
+            children: [
+              { path: '/clients', element: <ClientsPage /> },
+              { path: '/clients/:id', element: <ClientDetailPage /> },
               { path: '/finances', element: <FinancesPage /> },
               { path: '/equipe', element: <TeamPage /> },
               { path: '/reglages', element: <SettingsPage /> },

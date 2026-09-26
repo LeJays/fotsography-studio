@@ -2,7 +2,7 @@ import { Document, Page, StyleSheet, Text, View, pdf } from '@react-pdf/renderer
 import { PAYMENT_TYPE_LABELS } from '../../shared/consts.ts'
 import { formatDate, formatDateTime } from '../../shared/dates.ts'
 import { formatAmount } from '../../shared/money.ts'
-import type { PaymentSummary, ProjectDetail, ReceiptSummary } from '../../shared/types.ts'
+import type { PaymentMethod, PaymentSummary, ProjectDetail, ReceiptSummary, TaskPayoutSummary, TaskSummary } from '../../shared/types.ts'
 
 const styles = StyleSheet.create({
   page: { padding: 38, fontFamily: 'Helvetica', color: '#1f2933', fontSize: 10, backgroundColor: '#fffdf9' },
@@ -52,4 +52,82 @@ export const previewReceiptPdf = async (project: ProjectDetail, receipt: Receipt
   const blob = await pdf(<ReceiptDocument project={project} receipt={receipt} payment={payment} />).toBlob()
   const url = URL.createObjectURL(blob)
   previewWindow.location.href = url
+}
+
+const METHOD_LABELS: Record<PaymentMethod, string> = { CASH: 'Espèces', MOMO: 'Mobile Money', BANK: 'Virement' }
+
+/** Reçu d'un versement (total ou tranche) de la rémunération d'un membre pour une tâche. */
+const TaskPayoutReceiptDocument = ({ task, payout }: { task: TaskSummary; payout: TaskPayoutSummary }) => (
+  <Document title={`Reçu de rémunération ${payout.receiptNumber ?? ''}`.trim()} author="Fotsography Studio">
+    <Page size="A4" style={styles.page}>
+      <View style={styles.top}>
+        <View>
+          <Text style={styles.brand}>Fotsography <Text style={styles.gold}>Studio</Text></Text>
+          <Text style={styles.small}>PHOTOGRAPHY & VIDEOGRAPHY</Text>
+        </View>
+        <View>
+          <Text style={styles.label}>Document n°</Text>
+          <Text style={styles.value}>{payout.receiptNumber ?? '—'}</Text>
+          <Text style={styles.small}>Émis le {formatDateTime(payout.paidAt)}</Text>
+        </View>
+      </View>
+      <Text style={styles.title}>REÇU DE RÉMUNÉRATION</Text>
+      <Text style={styles.number}>{task.name}</Text>
+      <View style={styles.section}>
+        <Text style={styles.label}>Versé à</Text>
+        <Text style={styles.value}>{task.assignedUserName}</Text>
+        <Text style={styles.small}>Tâche : {task.name}</Text>
+        <Text style={styles.small}>Activité : {task.activityName} · Projet : {task.projectName}</Text>
+        <Text style={styles.small}>Échéance de la tâche : {formatDate(task.deliveryDate)}</Text>
+      </View>
+      <View style={styles.row}>
+        <Text>Montant de ce versement</Text>
+        <Text style={styles.value}>{formatAmount(payout.amount)}</Text>
+      </View>
+      <View style={styles.row}>
+        <Text>Rémunération convenue</Text>
+        <Text>{formatAmount(task.memberPayout ?? 0)}</Text>
+      </View>
+      <View style={styles.row}>
+        <Text>Total versé à ce jour</Text>
+        <Text>{formatAmount(task.paidPayout ?? payout.amount)}</Text>
+      </View>
+      <View style={styles.row}>
+        <Text>Reste à verser</Text>
+        <Text>{formatAmount(task.payoutRemaining ?? 0)}</Text>
+      </View>
+      <View style={styles.row}>
+        <Text>Moyen de paiement</Text>
+        <Text>{METHOD_LABELS[payout.method]}</Text>
+      </View>
+      {payout.reference ? (
+        <View style={styles.row}>
+          <Text>Référence</Text>
+          <Text>{payout.reference}</Text>
+        </View>
+      ) : null}
+      {payout.note ? (
+        <View style={styles.row}>
+          <Text>Note</Text>
+          <Text>{payout.note}</Text>
+        </View>
+      ) : null}
+      <View style={styles.total}>
+        <Text style={styles.value}>VERSEMENT RÉGLÉ</Text>
+        <Text style={styles.value}>{formatAmount(payout.amount)}</Text>
+      </View>
+      <Text style={styles.footer}>Document émis par Fotsography Studio. Ce reçu confirme le versement de la rémunération indiquée ci-dessus.</Text>
+    </Page>
+  </Document>
+)
+
+/** Télécharge le reçu PDF d'un versement de rémunération (tranche ou solde). */
+export const downloadTaskPayoutReceipt = async (task: TaskSummary, payout: TaskPayoutSummary): Promise<void> => {
+  const blob = await pdf(<TaskPayoutReceiptDocument task={task} payout={payout} />).toBlob()
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = `recu-${payout.receiptNumber ?? 'rémuneration'}.pdf`
+  link.click()
+  URL.revokeObjectURL(url)
 }

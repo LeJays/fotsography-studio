@@ -1,14 +1,14 @@
 import type { User } from '@prisma/client'
 import { STAFF_ROLES } from '../../shared/consts.ts'
 import { createUserSchema, updateUserSchema } from '../../shared/schemas/user.ts'
-import type { CreateUserPayload, UserSummary, UpdateUserPayload } from '../../shared/types.ts'
+import type { CreateUserPayload, UserSummary, UpdateUserPayload, AssignableUser } from '../../shared/types.ts'
 import { prisma } from '../db.ts'
 import { HttpError, sendJson, sendNoContent } from '../http.ts'
 import { requireAuth, requireRole } from '../middleware/auth.ts'
 import { bodyOf, validateBody } from '../middleware/validate.ts'
 import { hashPassword } from '../password.ts'
 import type { RouteContext, RouteDefinition } from '../router.ts'
-import { toUserSummary } from '../serialize.ts'
+import { toAssignableUser, toUserSummary } from '../serialize.ts'
 import { recordAudit } from '../services/audit.ts'
 
 const activeMembers = () =>
@@ -34,6 +34,20 @@ const countActiveAdmins = async (): Promise<number> =>
 const listUsers = async (ctx: RouteContext): Promise<void> => {
   const users = await activeMembers()
   sendJson(ctx.res, 200, { users: users.map(toUserSummary) } satisfies { users: UserSummary[] })
+}
+
+/**
+ * GET /api/users/assignable — membres actifs que l'on peut assigner à une tâche.
+ * Ouvert à l'admin ET à l'assistant : n'expose ni email ni téléphone.
+ */
+const listAssignableUsers = async (ctx: RouteContext): Promise<void> => {
+  const users = await prisma.user.findMany({
+    where: { archivedAt: null, isActive: true, role: { not: 'CLIENT' } },
+    orderBy: [{ role: 'asc' }, { name: 'asc' }],
+    select: { id: true, name: true, role: true, isActive: true },
+  })
+
+  sendJson(ctx.res, 200, { users: users.map(toAssignableUser) } satisfies { users: AssignableUser[] })
 }
 
 /** POST /api/users — l'admin crée un membre et lui attribue un rôle. */
@@ -147,6 +161,13 @@ const archiveUser = async (ctx: RouteContext): Promise<void> => {
 }
 
 export const userRoutes: RouteDefinition[] = [
+  {
+    method: 'GET',
+    path: '/api/users/assignable',
+    auth: true,
+    middlewares: [requireAuth, requireRole('ADMIN', 'ASSISTANT')],
+    handler: listAssignableUsers,
+  },
   {
     method: 'GET',
     path: '/api/users',

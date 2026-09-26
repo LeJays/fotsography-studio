@@ -3,7 +3,7 @@ import { ArrowLeft, CalendarDays, CheckCircle2, ClipboardList, Pencil, Plus, Tra
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { formatDate, toDateInputValue, todayInputValue } from '../../../shared/dates.ts'
 import { formatAmount } from '../../../shared/money.ts'
-import type { ActivitySummary, ExpenseSummary, TaskSummary, UserSummary } from '../../../shared/types.ts'
+import type { ActivitySummary, AssignableUser, ExpenseSummary, TaskSummary } from '../../../shared/types.ts'
 import {
   Alert,
   Badge,
@@ -19,6 +19,7 @@ import {
   Td,
   Th,
 } from '../../components/ui'
+import { useAuth } from '../../context/AuthContext'
 import {
   ApiError,
   archiveActivityApi,
@@ -30,6 +31,7 @@ import {
   fetchExpenses,
   fetchTasks,
   fetchUsers,
+  fetchAssignableUsers,
   updateActivityApi,
   updateExpenseApi,
   updateTaskApi,
@@ -55,16 +57,19 @@ const amountFromForm = (form: FormData, field: string): number => {
 /** Fiche de second niveau : une activité et les tâches qui lui sont affectées. */
 export const ActivityDetailPage = () => {
   const { id } = useParams<{ id: string }>()
+  const { isAdmin } = useAuth()
   const navigate = useNavigate()
   const [activity, setActivity] = useState<ActivitySummary | null>(null)
   const [tasks, setTasks] = useState<TaskSummary[]>([])
   const [expenses, setExpenses] = useState<ExpenseSummary[]>([])
-  const [users, setUsers] = useState<UserSummary[]>([])
+  const [users, setUsers] = useState<AssignableUser[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
   const [feedback, setFeedback] = useState('')
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false)
   const [editingTask, setEditingTask] = useState<TaskSummary | null>(null)
+  /** Membre sélectionné dans le modal « Distribuer une tâche » (contrôlé pour réagir au rôle). */
+  const [taskAssigneeId, setTaskAssigneeId] = useState('')
   const [isActivityModalOpen, setIsActivityModalOpen] = useState(false)
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false)
   const [editingExpense, setEditingExpense] = useState<ExpenseSummary | null>(null)
@@ -77,12 +82,13 @@ export const ActivityDetailPage = () => {
       const [activitiesResponse, tasksResponse, usersResponse, expensesResponse] = await Promise.all([
         fetchActivities(),
         fetchTasks(id),
-        fetchUsers(),
-        fetchExpenses(id),
+        isAdmin ? fetchUsers() : fetchAssignableUsers(),
+        isAdmin ? fetchExpenses(id) : Promise.resolve({ expenses: [] as ExpenseSummary[] }),
       ])
       setActivity(activitiesResponse.activities.find((item) => item.id === id) ?? null)
       setTasks(tasksResponse.tasks)
-      setUsers(usersResponse.users.filter((user) => user.isActive && user.role !== 'CLIENT'))
+      const members: AssignableUser[] = usersResponse.users
+      setUsers(members.filter((member) => member.isActive && member.role !== 'CLIENT'))
       setExpenses(expensesResponse.expenses)
       setError('')
     } catch (requestError) {
@@ -90,7 +96,7 @@ export const ActivityDetailPage = () => {
     } finally {
       setIsLoading(false)
     }
-  }, [id])
+  }, [id, isAdmin])
 
   useEffect(() => {
     void load()
@@ -98,6 +104,7 @@ export const ActivityDetailPage = () => {
 
   const openCreateTaskModal = () => {
     setEditingTask(null)
+    setTaskAssigneeId(users[0]?.id ?? '')
     setError('')
     setIsTaskModalOpen(true)
   }
@@ -158,6 +165,7 @@ export const ActivityDetailPage = () => {
 
   const openEditTaskModal = (task: TaskSummary) => {
     setEditingTask(task)
+    setTaskAssigneeId(task.assignedUserId)
     setError('')
     setIsTaskModalOpen(true)
   }
@@ -165,6 +173,8 @@ export const ActivityDetailPage = () => {
   const closeTaskModal = () => {
     if (!isSaving) setIsTaskModalOpen(false)
   }
+  // Le membre choisi pour la tâche détermine si une rémunération membre doit être saisie.
+  const taskAssigneeIsAdmin = users.find((user) => user.id === taskAssigneeId)?.role === 'ADMIN'
 
   const saveTask = async (form: FormData) => {
     if (!activity) return
@@ -178,11 +188,13 @@ export const ActivityDetailPage = () => {
     setIsSaving(true)
     setError('')
     try {
+      const assigneeIsAdmin = users.find((user) => user.id === assignedUserId)?.role === 'ADMIN'
       const payload = {
         assignedUserId,
         name,
-        clientPriceShare: amountFromForm(form, 'clientPriceShare'),
-        memberPayout: amountFromForm(form, 'memberPayout'),
+        ...(isAdmin ? { clientPriceShare: amountFromForm(form, 'clientPriceShare') } : {}),
+        // Une tâche assignée à l'admin ne porte aucune rémunération membre.
+        ...(isAdmin && !assigneeIsAdmin ? { memberPayout: amountFromForm(form, 'memberPayout') } : {}),
       }
       if (editingTask) {
         await updateTaskApi(editingTask.id, payload)
@@ -272,14 +284,16 @@ export const ActivityDetailPage = () => {
         title={activity.name}
         subtitle={`${activity.projectName} — ${activity.description || 'Gestion des tâches de cette activité.'}`}
         actions={
-          <div className="flex flex-wrap gap-2">
+          isAdmin ? (
+            <div className="flex flex-wrap gap-2">
             <Button variant="secondary" onClick={() => setIsActivityModalOpen(true)}>
               <Pencil className="h-4 w-4" /> Modifier l’activité
             </Button>
             <Button variant="danger" onClick={() => void removeActivity()}>
               <Trash2 className="h-4 w-4" /> Supprimer l’activité
             </Button>
-          </div>
+            </div>
+          ) : undefined
         }
       />
 
@@ -319,11 +333,20 @@ export const ActivityDetailPage = () => {
         ) : (
           <div className="grid gap-4 md:grid-cols-2">
             {tasks.map((task) => (
-              <Card key={task.id} className="space-y-4">
+              <Card
+                key={task.id}
+                className="group relative flex flex-col gap-4 transition hover:-translate-y-0.5 hover:border-studio-gold/40 hover:shadow-md"
+              >
+                {/* Lien étiré : toute la carte ouvre la fiche de la tâche (les actions du bas restent cliquables). */}
+                <Link
+                  to={`/taches/${task.id}`}
+                  aria-label={`Ouvrir la tâche ${task.name}`}
+                  className="absolute -inset-px rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-studio-gold/50"
+                />
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-wide text-studio-terracotta">{task.projectName}</p>
-                    <Link to={`/taches/${task.id}`} className="mt-1 block font-serif text-lg font-bold text-studio-dark hover:text-studio-terracotta">{task.name}</Link>
+                    <h3 className="mt-1 font-serif text-lg font-bold text-studio-dark transition group-hover:text-studio-terracotta">{task.name}</h3>
                   </div>
                   <Badge tone={taskStatusTones[task.status]}>
                     {task.status === 'COMPLETED' ? <CheckCircle2 className="h-3 w-3" /> : null}
@@ -336,7 +359,7 @@ export const ActivityDetailPage = () => {
                   <p className="flex items-center gap-2"><CalendarDays className="h-4 w-4 text-studio-terracotta" />À livrer le {formatDate(task.deliveryDate)}</p>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3 border-t border-studio-dark/10 pt-3 text-sm">
+                {isAdmin ? <div className="grid grid-cols-2 gap-3 border-t border-studio-dark/10 pt-3 text-sm">
                   <div>
                     <p className="text-xs text-studio-dark/45">Part client</p>
                     <strong>{formatAmount(task.clientPriceShare ?? 0)}</strong>
@@ -345,15 +368,15 @@ export const ActivityDetailPage = () => {
                     <p className="text-xs text-studio-dark/45">Rémunération membre</p>
                     <strong className="text-green-700">{formatAmount(task.memberPayout ?? 0)}</strong>
                   </div>
-                </div>
+                </div> : null}
 
-                <div className="flex flex-wrap justify-end gap-2 border-t border-studio-dark/10 pt-3">
+                <div className="relative flex flex-wrap justify-end gap-2 border-t border-studio-dark/10 pt-3">
                   <Button variant="secondary" size="sm" onClick={() => openEditTaskModal(task)}>
                     <Pencil className="h-3.5 w-3.5" /> Modifier
                   </Button>
-                  <Button variant="danger" size="sm" onClick={() => void removeTask(task)}>
+                  {isAdmin ? <Button variant="danger" size="sm" onClick={() => void removeTask(task)}>
                     <Trash2 className="h-3.5 w-3.5" /> Supprimer
-                  </Button>
+                  </Button> : null}
                 </div>
               </Card>
             ))}
@@ -361,7 +384,7 @@ export const ActivityDetailPage = () => {
         )}
       </section>
 
-      <section className="space-y-4">
+      {isAdmin ? <section className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="font-serif text-xl font-bold text-studio-dark">Dépenses de l’activité</h2>
@@ -383,10 +406,10 @@ export const ActivityDetailPage = () => {
             <tbody>{expenses.map((expense) => <tr key={expense.id}><Td><span className="font-medium">{expense.description}</span></Td><Td>{expense.supplier || '—'}</Td><Td>{formatDate(expense.expenseDate)}</Td><Td><strong>{formatAmount(expense.amount)}</strong></Td><Td className="text-right"><div className="flex justify-end gap-2"><Button variant="secondary" size="sm" onClick={() => openEditExpenseModal(expense)}><Pencil className="h-3.5 w-3.5" /> Modifier</Button><Button variant="danger" size="sm" onClick={() => void removeExpense(expense)}><Trash2 className="h-3.5 w-3.5" /> Supprimer</Button></div></Td></tr>)}</tbody>
           </TableWrapper>
         )}
-      </section>
+      </section> : null}
 
       <Modal
-        open={isExpenseModalOpen}
+        open={isAdmin && isExpenseModalOpen}
         onClose={() => !isSaving && setIsExpenseModalOpen(false)}
         title={editingExpense ? 'Modifier la dépense' : 'Ajouter une dépense'}
         subtitle="Cette dépense sera rattachée uniquement à cette activité."
@@ -410,7 +433,7 @@ export const ActivityDetailPage = () => {
       >
         <form key={editingTask?.id ?? 'new-task'} className="space-y-4" action={(form) => void saveTask(form)}>
           <Field label="Membre responsable *">
-            <Select name="assignedUserId" defaultValue={editingTask?.assignedUserId ?? users[0]?.id ?? ''}>
+            <Select name="assignedUserId" value={taskAssigneeId} onChange={(event) => setTaskAssigneeId(event.target.value)}>
               <option value="">Sélectionnez un membre</option>
               {users.map((user) => <option key={user.id} value={user.id}>{user.name}</option>)}
             </Select>
@@ -418,14 +441,25 @@ export const ActivityDetailPage = () => {
           <Field label="Nom de la tâche *">
             <Input name="name" defaultValue={editingTask?.name ?? ''} required autoFocus placeholder="Ex. Retouche de la galerie" />
           </Field>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Part client (FCFA)">
-              <Input name="clientPriceShare" type="number" min="0" defaultValue={editingTask?.clientPriceShare ?? 0} />
-            </Field>
-            <Field label="Rémunération membre (FCFA)">
-              <Input name="memberPayout" type="number" min="0" defaultValue={editingTask?.memberPayout ?? 0} />
-            </Field>
-          </div>
+          {isAdmin ? (
+            <>
+              <div className={`grid gap-4 ${taskAssigneeIsAdmin ? '' : 'sm:grid-cols-2'}`}>
+                <Field label="Part client (FCFA)">
+                  <Input name="clientPriceShare" type="number" min="0" defaultValue={editingTask?.clientPriceShare ?? 0} />
+                </Field>
+                {taskAssigneeIsAdmin ? null : (
+                  <Field label="Rémunération membre (FCFA)">
+                    <Input name="memberPayout" type="number" min="0" defaultValue={editingTask?.memberPayout ?? 0} />
+                  </Field>
+                )}
+              </div>
+              {taskAssigneeIsAdmin ? (
+                <Alert tone="info">Tâche assignée à l’administrateur : seul le montant demandé au client est renseigné, aucune rémunération membre n’est prévue.</Alert>
+              ) : null}
+            </>
+          ) : (
+            <Alert tone="info">Les montants (part client et rémunération) sont renseignés par l’administrateur.</Alert>
+          )}
           <div className="flex justify-end gap-2 border-t border-studio-dark/10 pt-4">
             <Button variant="ghost" onClick={closeTaskModal}>Annuler</Button>
             <Button type="submit" loading={isSaving}>{editingTask ? 'Enregistrer' : 'Distribuer'}</Button>
