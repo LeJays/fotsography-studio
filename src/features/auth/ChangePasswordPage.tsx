@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { KeyRound } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { changePasswordSchema } from '../../../shared/schemas/auth.ts';
-import { Alert, Button, Card, Field, Input } from '../../components/ui';
+import { Button, Card, Field, Input, useToast } from '../../components/ui';
 import { useAuth } from '../../context/AuthContext';
 import { ApiError } from '../../lib/api';
 
@@ -10,19 +10,17 @@ import { ApiError } from '../../lib/api';
 export const ChangePasswordPage: React.FC = () => {
   const { user, changePassword, logout } = useAuth();
   const navigate = useNavigate();
+  const toast = useToast();
 
   const [form, setForm] = useState({
     currentPassword: '',
     newPassword: '',
     confirmPassword: '',
   });
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const update = (event: React.ChangeEvent<HTMLInputElement>) => {
     setForm((previous) => ({ ...previous, [event.target.name]: event.target.value }));
-    setError('');
   };
 
   const handleSubmit = async (event: React.FormEvent) => {
@@ -31,11 +29,10 @@ export const ChangePasswordPage: React.FC = () => {
     const parsed = changePasswordSchema.safeParse(form);
 
     if (!parsed.success) {
-      setError(parsed.error.issues[0]?.message ?? 'Données invalides.');
+      toast.error(parsed.error.issues[0]?.message ?? 'Données invalides.');
       return;
     }
 
-    setError('');
     setIsSubmitting(true);
 
     try {
@@ -44,11 +41,11 @@ export const ChangePasswordPage: React.FC = () => {
         newPassword: parsed.data.newPassword,
         confirmPassword: parsed.data.confirmPassword,
       });
-      setSuccess(true);
+      toast.success('Mot de passe mis à jour. Redirection…');
       setForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
       setTimeout(() => navigate('/', { replace: true }), 900);
     } catch (caught) {
-      setError(caught instanceof ApiError ? caught.message : 'Changement impossible. Réessayez.');
+      toast.error(caught instanceof ApiError ? caught.message : 'Changement impossible. Réessayez.');
     } finally {
       setIsSubmitting(false);
     }
@@ -77,18 +74,6 @@ export const ChangePasswordPage: React.FC = () => {
             ? 'Votre compte a été créé par l’administrateur : choisissez votre mot de passe personnel.'
             : 'Confirmez votre mot de passe actuel puis choisissez un nouveau mot de passe.'}
         </p>
-
-        {error ? (
-          <Alert tone="error" className="mt-5">
-            {error}
-          </Alert>
-        ) : null}
-
-        {success ? (
-          <Alert tone="success" className="mt-5">
-            Mot de passe mis à jour. Redirection…
-          </Alert>
-        ) : null}
 
         <form onSubmit={handleSubmit} className="mt-6 space-y-4">
           <Field label="Mot de passe actuel" htmlFor="currentPassword">

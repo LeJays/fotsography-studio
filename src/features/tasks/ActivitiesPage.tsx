@@ -4,7 +4,6 @@ import { Link } from 'react-router-dom'
 import type { ActivitySummary, ProjectSummary, TaskSummary } from '../../../shared/types.ts'
 import { formatAmount } from '../../../shared/money.ts'
 import {
-  Alert,
   Badge,
   Button,
   Card,
@@ -16,6 +15,8 @@ import {
   PageHeader,
   Select,
   Textarea,
+  useConfirm,
+  useToast,
 } from '../../components/ui'
 import { useAuth } from '../../context/AuthContext'
 import {
@@ -30,13 +31,13 @@ import {
 
 /** Page de premier niveau : les activités d'un projet, puis la fiche de chaque activité. */
 export const ActivitiesPage = () => {
+  const toast = useToast()
+  const confirm = useConfirm()
   const { isAdmin } = useAuth()
   const [activities, setActivities] = useState<ActivitySummary[]>([])
   const [projects, setProjects] = useState<ProjectSummary[]>([])
   const [tasks, setTasks] = useState<TaskSummary[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState('')
-  const [feedback, setFeedback] = useState('')
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [selectedActivity, setSelectedActivity] = useState<ActivitySummary | null>(null)
   const [isSaving, setIsSaving] = useState(false)
@@ -52,9 +53,8 @@ export const ActivitiesPage = () => {
       setActivities(activitiesResponse.activities)
       setProjects(projectsResponse.projects)
       setTasks(tasksResponse.tasks)
-      setError('')
     } catch (requestError) {
-      setError(requestError instanceof ApiError ? requestError.message : 'Chargement des activités impossible.')
+      toast.error(requestError instanceof ApiError ? requestError.message : 'Chargement des activités impossible.')
     } finally {
       setIsLoading(false)
     }
@@ -63,6 +63,11 @@ export const ActivitiesPage = () => {
   useEffect(() => {
     void load()
   }, [load])
+  useEffect(() => {
+    if (!isLoading && projects.length === 0) {
+      toast.info('Aucun projet disponible : créez d’abord un projet pour pouvoir lui rattacher des activités.')
+    }
+  }, [isLoading, projects.length, toast])
 
   const taskCounts = useMemo(() => {
     const counts = new Map<string, number>()
@@ -72,13 +77,11 @@ export const ActivitiesPage = () => {
 
   const openCreateModal = () => {
     setSelectedActivity(null)
-    setError('')
     setIsModalOpen(true)
   }
 
   const openEditModal = (activity: ActivitySummary) => {
     setSelectedActivity(activity)
-    setError('')
     setIsModalOpen(true)
   }
 
@@ -92,38 +95,42 @@ export const ActivitiesPage = () => {
     const projectId = String(form.get('projectId') ?? '')
 
     if (!name || !projectId) {
-      setError('Le projet et le nom de l’activité sont obligatoires.')
+      toast.error('Le projet et le nom de l’activité sont obligatoires.')
       return
     }
 
     setIsSaving(true)
-    setError('')
     try {
       if (selectedActivity) {
         await updateActivityApi(selectedActivity.id, { name, description })
-        setFeedback('Activité mise à jour.')
+        toast.success('Activité mise à jour.')
       } else {
         await createActivityApi({ projectId, name, description })
-        setFeedback('Activité créée. Vous pouvez maintenant lui distribuer des tâches.')
+        toast.success('Activité créée. Vous pouvez maintenant lui distribuer des tâches.')
       }
       setIsModalOpen(false)
       await load()
     } catch (requestError) {
-      setError(requestError instanceof ApiError ? requestError.message : 'Enregistrement de l’activité impossible.')
+      toast.error(requestError instanceof ApiError ? requestError.message : 'Enregistrement de l’activité impossible.')
     } finally {
       setIsSaving(false)
     }
   }
 
   const removeActivity = async (activity: ActivitySummary) => {
-    if (!window.confirm(`Supprimer l’activité « ${activity.name} » ?`)) return
-    setError('')
+    const ok = await confirm({
+      title: 'Supprimer l’activité',
+      message: `Êtes-vous sûr de vouloir supprimer l’activité « ${activity.name} » ? Ses tâches rattachées seront également supprimées.`,
+      confirmText: 'Supprimer',
+      variant: 'danger',
+    });
+    if (!ok) return;
     try {
       await archiveActivityApi(activity.id)
-      setFeedback('Activité supprimée.')
+      toast.success('Activité supprimée.')
       await load()
     } catch (requestError) {
-      setError(requestError instanceof ApiError ? requestError.message : 'Suppression de l’activité impossible.')
+      toast.error(requestError instanceof ApiError ? requestError.message : 'Suppression de l’activité impossible.')
     }
   }
 
@@ -140,14 +147,6 @@ export const ActivitiesPage = () => {
           ) : undefined
         }
       />
-
-      {feedback ? <Alert tone="success">{feedback}</Alert> : null}
-      {error ? <Alert tone="error">{error}</Alert> : null}
-      {!isLoading && projects.length === 0 ? (
-        <Alert tone="info" title="Aucun projet disponible">
-          Créez d’abord un projet pour pouvoir lui rattacher des activités.
-        </Alert>
-      ) : null}
 
       {isLoading ? (
         <CardGridSkeleton />

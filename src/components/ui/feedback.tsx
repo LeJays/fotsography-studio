@@ -1,47 +1,6 @@
 import React from 'react';
-import { AlertTriangle, CheckCircle2, Info, X, XCircle } from 'lucide-react';
+import { X } from 'lucide-react';
 import { Button, Card, cn } from './primitives';
-
-const ALERT_TONES = {
-  info: {
-    wrapper: 'border-studio-gold/30 bg-studio-gold/10 text-studio-dark ring-studio-gold/25',
-    icon: <Info className="h-4 w-4" />,
-  },
-  success: {
-    wrapper: 'border-green-200 bg-green-50 text-green-700 ring-green-200/70',
-    icon: <CheckCircle2 className="h-4 w-4" />,
-  },
-  error: {
-    wrapper: 'border-red-200 bg-red-50 text-red-600 ring-red-200/70',
-    icon: <XCircle className="h-4 w-4" />,
-  },
-  warning: {
-    wrapper: 'border-amber-200 bg-amber-50 text-amber-700 ring-amber-200/70',
-    icon: <AlertTriangle className="h-4 w-4" />,
-  },
-} as const;
-
-export const Alert: React.FC<{
-  tone?: keyof typeof ALERT_TONES;
-  title?: string;
-  className?: string;
-  children?: React.ReactNode;
-}> = ({ tone = 'info', title, className, children }) => (
-  <div
-    role="alert"
-    className={cn(
-      'flex items-start gap-2.5 rounded-studio border px-3.5 py-2.5 text-xs font-medium shadow-studio-xs ring-1',
-      ALERT_TONES[tone].wrapper,
-      className,
-    )}
-  >
-    <span className="mt-px shrink-0">{ALERT_TONES[tone].icon}</span>
-    <div>
-      {title ? <p className="font-semibold">{title}</p> : null}
-      {children ? <div className={cn(title && 'mt-1')}>{children}</div> : null}
-    </div>
-  </div>
-);
 
 export const EmptyState: React.FC<{
   title: string;

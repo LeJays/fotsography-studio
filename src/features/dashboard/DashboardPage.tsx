@@ -4,7 +4,7 @@ import { CircleDollarSign, Clock3, FolderKanban, ListChecks, TriangleAlert } fro
 import { formatDateShort } from '../../../shared/dates.ts'
 import { formatAmount } from '../../../shared/money.ts'
 import type { FinanceOverview, OperationsOverview, ProjectSummary, TaskSummary } from '../../../shared/types.ts'
-import { Alert, Badge, Button, Card, EmptyState, PageHeader, ProgressBar, Skeleton, StatCard, StatsSkeleton, TableWrapper, Td, Th } from '../../components/ui'
+import { Badge, Button, Card, EmptyState, PageHeader, ProgressBar, Skeleton, StatCard, StatsSkeleton, TableWrapper, Td, Th, useToast } from '../../components/ui'
 import { useAuth } from '../../context/AuthContext'
 import { ApiError, fetchFinances, fetchMyTasks, fetchOperationsOverview, fetchProjects, fetchTasks } from '../../lib/api'
 import { computeMemberStats, computeStudyStats, percent } from '../../lib/taskStats'
@@ -30,13 +30,13 @@ const timeTone = (date: string | null): 'red' | 'gold' | 'green' | 'gray' => {
 
 export const DashboardPage = () => {
   const { user, isAdmin } = useAuth()
+  const toast = useToast()
   const isAssistant = user?.role === 'ASSISTANT'
   const [finance, setFinance] = useState(emptyFinance)
   const [operations, setOperations] = useState(emptyOperations)
   const [projects, setProjects] = useState<ProjectSummary[]>([])
   const [tasks, setTasks] = useState<TaskSummary[]>([])
   const [myTasks, setMyTasks] = useState<TaskSummary[]>([])
-  const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
 
   const load = useCallback(async () => {
@@ -51,17 +51,21 @@ export const DashboardPage = () => {
         const memberTasks = (await fetchTasks()).tasks
         setTasks(memberTasks); setMyTasks(memberTasks)
       }
-      setError('')
     } catch (reason) {
-      setError(reason instanceof ApiError ? reason.message : 'Chargement du tableau de bord impossible.')
+      toast.error(reason instanceof ApiError ? reason.message : 'Chargement du tableau de bord impossible.')
     } finally { setLoading(false) }
-  }, [isAdmin, isAssistant])
+  }, [isAdmin, isAssistant, toast])
 
   useEffect(() => { void load() }, [load])
 
   const upcoming = useMemo(() => [...tasks].sort((a, b) => a.deliveryDate.localeCompare(b.deliveryDate)).slice(0, 5), [tasks])
   const active = projects.filter((project) => project.status === 'IN_PROGRESS').slice(0, 5)
-  const atRisk = operations.projects.filter((project) => project.nextTaskDeliveryDate && daysUntil(project.nextTaskDeliveryDate) <= 3 && project.completedTaskCount < project.taskCount)
+  const atRisk = useMemo(() => operations.projects.filter((project) => project.nextTaskDeliveryDate && daysUntil(project.nextTaskDeliveryDate) <= 3 && project.completedTaskCount < project.taskCount), [operations])
+  useEffect(() => {
+    if (atRisk.length > 0) {
+      toast.info(`${atRisk.length} projet${atRisk.length > 1 ? 's demandent' : ' demande'} une attention rapide : une tâche est proche de son échéance ou en retard.`)
+    }
+  }, [atRisk, toast])
   // Étude comparative et classement des membres (tableau de bord admin).
   const study = useMemo(() => computeStudyStats(tasks), [tasks])
   const ranking = useMemo(() => computeMemberStats(tasks), [tasks])
@@ -78,7 +82,6 @@ export const DashboardPage = () => {
       subtitle={isAdmin ? 'Vue opérationnelle et financière du studio.' : isAssistant ? 'Pilotage opérationnel des projets, sans données financières.' : 'Vos prochaines tâches et échéances.'}
       actions={isAdmin ? <Link to="/projets"><Button size="sm">Nouveau projet</Button></Link> : null}
     />
-    {error ? <Alert tone="error">{error}</Alert> : null}
     {loading ? <>
       <StatsSkeleton />
       <div className="grid gap-5 xl:grid-cols-2">
@@ -163,7 +166,6 @@ export const DashboardPage = () => {
       {myTasks.length ? <MemberStatsPanel tasks={myTasks} /> : null}
     </> : isAssistant ? <>
       <div className="studio-stagger grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><StatCard label="Projets actifs" value={operations.projects.filter((project) => project.status === 'IN_PROGRESS').length.toString()} icon={<FolderKanban className="h-5 w-5" />} /><StatCard label="Tâches à faire" value={operations.pendingTaskCount.toString()} icon={<ListChecks className="h-5 w-5" />} /><StatCard label="En vérification" value={operations.reviewTaskCount.toString()} /><StatCard label="À surveiller" value={atRisk.length.toString()} icon={<TriangleAlert className="h-5 w-5" />} /></div>
-      {atRisk.length ? <Alert tone="info">{atRisk.length} projet{atRisk.length > 1 ? 's demandent' : ' demande'} une attention rapide : une tâche est proche de son échéance ou en retard.</Alert> : null}
       <Card><div className="flex flex-wrap items-baseline justify-between gap-2"><div><h2 className="font-serif text-xl font-bold">Évolution des tâches par projet</h2><p className="mt-1 text-sm text-studio-dark/55">Répartition des tâches et marge avant la prochaine livraison.</p></div><span className="text-sm text-studio-dark/55">{operations.completedTaskCount} / {operations.totalTaskCount} tâches terminées</span></div><div className="mt-5 space-y-5">{operations.projects.length ? operations.projects.map((project) => { const total = project.taskCount || 1; return <div key={project.id} className="rounded-lg border border-studio-dark/10 p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="font-semibold text-studio-dark">{project.eventName}</h3><p className="text-xs text-studio-dark/55">{project.clientName} · Livraison globale : {formatDateShort(project.globalDeliveryDate)}</p></div><Badge tone={timeTone(project.nextTaskDeliveryDate)}><Clock3 className="h-3.5 w-3.5" />{timeLabel(project.nextTaskDeliveryDate)}</Badge></div><div className="mt-4 flex h-2 overflow-hidden rounded-full bg-studio-dark/10"><div className="bg-green-600" style={{ width: `${(project.completedTaskCount / total) * 100}%` }} /><div className="bg-studio-gold" style={{ width: `${(project.reviewTaskCount / total) * 100}%` }} /><div className="bg-studio-terracotta" style={{ width: `${(project.pendingTaskCount / total) * 100}%` }} /></div><div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-studio-dark/65"><span>{project.completedTaskCount} terminée{project.completedTaskCount > 1 ? 's' : ''}</span><span>{project.reviewTaskCount} en vérification</span><span>{project.pendingTaskCount} à faire</span></div></div> }) : <EmptyState icon={<FolderKanban className="h-5 w-5" />} title="Aucun projet" description="Les projets actifs du studio apparaîtront ici." />}</div></Card>
       {myTasks.length ? <MemberStatsPanel tasks={myTasks} /> : null}
     </> : <>

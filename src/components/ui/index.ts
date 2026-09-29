@@ -30,4 +30,8 @@ export {
 
 export type { ButtonProps, InputProps, SegmentedOption } from './primitives';
 
-export { Alert, EmptyState, LoadingScreen, Modal } from './feedback';
+export { EmptyState, LoadingScreen, Modal } from './feedback';
+export { ToastProvider, useToast } from './toast';
+export type { ToastApi, ToastTone } from './toast';
+export { ConfirmProvider, useConfirm } from './confirm';
+export type { ConfirmFn, ConfirmOptions } from './confirm';

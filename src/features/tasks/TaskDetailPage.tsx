@@ -4,7 +4,7 @@ import { Link, useParams } from 'react-router-dom'
 import { formatDate } from '../../../shared/dates.ts'
 import { formatAmount } from '../../../shared/money.ts'
 import type { PaymentMethod, TaskSummary } from '../../../shared/types.ts'
-import { Alert, Button, Card, Field, Input, Modal, PageHeader, Select, StatCard, TableWrapper, Td, Textarea, Th } from '../../components/ui'
+import { Button, Card, Field, Input, Modal, PageHeader, Select, StatCard, TableWrapper, Td, Textarea, Th, useConfirm, useToast } from '../../components/ui'
 import { useAuth } from '../../context/AuthContext'
 import { ApiError, fetchTask, payTaskPayoutApi, reviewTaskApi, updateOwnTaskApi } from '../../lib/api'
 import { downloadTaskPayoutReceipt, previewTaskPayoutReceipt } from '../../lib/receiptPdf'
@@ -14,23 +14,44 @@ const METHOD_LABELS: Record<PaymentMethod, string> = { CASH: 'Espèces', MOMO: '
 
 export const TaskDetailPage = () => {
   const { id } = useParams<{ id: string }>(); const { user, isAdmin } = useAuth()
-  const [task, setTask] = useState<TaskSummary | null>(null); const [error, setError] = useState(''); const [feedback, setFeedback] = useState(''); const [loading, setLoading] = useState(true); const [saving, setSaving] = useState(false)
+  const toast = useToast()
+  const confirm = useConfirm()
+  const [task, setTask] = useState<TaskSummary | null>(null); const [loading, setLoading] = useState(true); const [saving, setSaving] = useState(false)
   // Retour de l'admin (raison + corrections demandées)
   const [returnOpen, setReturnOpen] = useState(false); const [returnNote, setReturnNote] = useState('')
   // Versement de la rémunération (total ou tranche)
   const [payoutAmount, setPayoutAmount] = useState(''); const [payoutMethod, setPayoutMethod] = useState<PaymentMethod>('CASH'); const [payoutReference, setPayoutReference] = useState(''); const [payoutNote, setPayoutNote] = useState('')
-  const load = useCallback(async () => { if (!id) return; try { setTask((await fetchTask(id)).task); setPayoutAmount(''); setError('') } catch (reason) { setError(reason instanceof ApiError ? reason.message : 'Chargement de la tâche impossible.') } finally { setLoading(false) } }, [id])
+  const load = useCallback(async () => { if (!id) return; try { setTask((await fetchTask(id)).task); setPayoutAmount('') } catch (reason) { toast.error(reason instanceof ApiError ? reason.message : 'Chargement de la tâche impossible.') } finally { setLoading(false) } }, [id, toast])
   useEffect(() => { void load() }, [load])
   // Pré-remplit le montant du prochain versement avec le reste à payer.
   useEffect(() => { if (task && payoutAmount === '') setPayoutAmount(String(task.payoutRemaining ?? 0)) }, [task, payoutAmount])
-  const saveProgress = async (form: FormData) => { if (!task) return; const status = String(form.get('status')) as TaskSummary['status']; const proofLink = String(form.get('proofLink') ?? '').trim(); if (status === 'COMPLETED' && !proofLink && !task.proofLink) { setError('Ajoutez le lien de la photo ou de la vidéo avant de terminer la tâche.'); return } setSaving(true); try { await updateOwnTaskApi(task.id, { status, ...(proofLink ? { proofLink } : {}) }); setFeedback('Avancement mis à jour.'); await load() } catch (reason) { setError(reason instanceof ApiError ? reason.message : 'Mise à jour impossible.') } finally { setSaving(false) } }
+  const saveProgress = async (form: FormData) => { if (!task) return; const status = String(form.get('status')) as TaskSummary['status']; const proofLink = String(form.get('proofLink') ?? '').trim(); if (status === 'COMPLETED' && !proofLink && !task.proofLink) { toast.error('Ajoutez le lien de la photo ou de la vidéo avant de terminer la tâche.'); return } setSaving(true); try { await updateOwnTaskApi(task.id, { status, ...(proofLink ? { proofLink } : {}) }); toast.success('Avancement mis à jour.'); await load() } catch (reason) { toast.error(reason instanceof ApiError ? reason.message : 'Mise à jour impossible.') } finally { setSaving(false) } }
   /** Cycle du badge en haut à droite : À faire → En cours → Terminée. */
-  const cycle = async (current: TaskSummary) => { if (saving) return; const target = nextStatus(current.status); if (target === 'COMPLETED' && !current.proofLink) { setError('Ajoutez d’abord le lien de la preuve (formulaire « Avancement » ci-dessous) avant de terminer la tâche.'); return } setSaving(true); try { await updateOwnTaskApi(current.id, { status: target }); setFeedback(`Statut mis à jour : ${STATUS_LABELS[target]}.`); await load() } catch (reason) { setError(reason instanceof ApiError ? reason.message : 'Mise à jour impossible.') } finally { setSaving(false) } }
-  const approve = async () => { if (!task || !window.confirm('Valider définitivement cette tâche ? Son statut sera verrouillé pour le membre.')) return; setSaving(true); try { await reviewTaskApi(task.id, { decision: 'APPROVED' }); setFeedback('Tâche validée.'); await load() } catch (reason) { setError(reason instanceof ApiError ? reason.message : 'Validation impossible.') } finally { setSaving(false) } }
-  const sendBack = async () => { if (!task) return; const note = returnNote.trim(); if (!note) { setError('Décrivez la raison du renvoi et les corrections attendues.'); return } setSaving(true); try { await reviewTaskApi(task.id, { decision: 'RETURNED', note }); setFeedback('Tâche renvoyée au membre avec vos instructions.'); setReturnOpen(false); setReturnNote(''); await load() } catch (reason) { setError(reason instanceof ApiError ? reason.message : 'Renvoi impossible.') } finally { setSaving(false) } }
-  const pay = async (event: FormEvent) => { event.preventDefault(); if (!task) return; const amount = Math.round(Number(payoutAmount)); const rest = task.payoutRemaining ?? 0; if (!amount || amount <= 0) { setError('Indiquez le montant du versement.'); return } if (amount > rest) { setError(`Le montant dépasse le reste à payer (${formatAmount(rest)}).`); return } setSaving(true); try { await payTaskPayoutApi(task.id, { amount, method: payoutMethod, reference: payoutReference.trim() || undefined, note: payoutNote.trim() || undefined }); setFeedback(`Versement de ${formatAmount(amount)} enregistré.`); setPayoutReference(''); setPayoutNote(''); await load() } catch (reason) { setError(reason instanceof ApiError ? reason.message : 'Paiement impossible.') } finally { setSaving(false) } }
+  const cycle = async (current: TaskSummary) => { if (saving) return; const target = nextStatus(current.status); if (target === 'COMPLETED' && !current.proofLink) { toast.error('Ajoutez d’abord le lien de la preuve (formulaire « Avancement » ci-dessous) avant de terminer la tâche.'); return } setSaving(true); try { await updateOwnTaskApi(current.id, { status: target }); toast.success(`Statut mis à jour : ${STATUS_LABELS[target]}.`); await load() } catch (reason) { toast.error(reason instanceof ApiError ? reason.message : 'Mise à jour impossible.') } finally { setSaving(false) } }
+  const approve = async () => {
+    if (!task) return;
+    const ok = await confirm({
+      title: 'Valider la tâche',
+      message: 'Valider définitivement cette tâche ? Son statut sera verrouillé pour le membre.',
+      confirmText: 'Valider',
+      variant: 'primary',
+    });
+    if (!ok) return;
+    setSaving(true);
+    try {
+      await reviewTaskApi(task.id, { decision: 'APPROVED' });
+      toast.success('Tâche validée.');
+      await load();
+    } catch (reason) {
+      toast.error(reason instanceof ApiError ? reason.message : 'Validation impossible.');
+    } finally {
+      setSaving(false);
+    }
+  }
+  const sendBack = async () => { if (!task) return; const note = returnNote.trim(); if (!note) { toast.error('Décrivez la raison du renvoi et les corrections attendues.'); return } setSaving(true); try { await reviewTaskApi(task.id, { decision: 'RETURNED', note }); toast.success('Tâche renvoyée au membre avec vos instructions.'); setReturnOpen(false); setReturnNote(''); await load() } catch (reason) { toast.error(reason instanceof ApiError ? reason.message : 'Renvoi impossible.') } finally { setSaving(false) } }
+  const pay = async (event: FormEvent) => { event.preventDefault(); if (!task) return; const amount = Math.round(Number(payoutAmount)); const rest = task.payoutRemaining ?? 0; if (!amount || amount <= 0) { toast.error('Indiquez le montant du versement.'); return } if (amount > rest) { toast.error(`Le montant dépasse le reste à payer (${formatAmount(rest)}).`); return } setSaving(true); try { await payTaskPayoutApi(task.id, { amount, method: payoutMethod, reference: payoutReference.trim() || undefined, note: payoutNote.trim() || undefined }); toast.success(`Versement de ${formatAmount(amount)} enregistré.`); setPayoutReference(''); setPayoutNote(''); await load() } catch (reason) { toast.error(reason instanceof ApiError ? reason.message : 'Paiement impossible.') } finally { setSaving(false) } }
   if (loading) return <Card className="p-12 text-center text-sm text-studio-dark/55">Chargement de la tâche…</Card>
-  if (!task) return <div className="space-y-4"><Alert tone="error">{error || 'Tâche introuvable.'}</Alert><Link to="/mes-taches"><Button variant="secondary"><ArrowLeft className="h-4 w-4" />Retour</Button></Link></div>
+  if (!task) return <div className="space-y-4"><div className="rounded-xl border border-studio-terracotta/30 bg-studio-terracotta/10 px-4 py-3 text-sm text-studio-terracotta">Tâche introuvable ou vous n’avez pas accès à cette fiche.</div><Link to="/mes-taches"><Button variant="secondary"><ArrowLeft className="h-4 w-4" />Retour</Button></Link></div>
   const isAssignee = user?.id === task.assignedUserId
   const review = lastReview(task)
   const approved = review?.decision === 'APPROVED' && task.status === 'COMPLETED'
@@ -47,17 +68,21 @@ export const TaskDetailPage = () => {
         subtitle={`${task.projectName} · ${task.activityName}`}
         actions={<StatusPill task={task} onCycle={isAssignee ? cycle : undefined} />}
       />
-      {error ? <Alert tone="error">{error}</Alert> : null}
-      {feedback ? <Alert tone="success">{feedback}</Alert> : null}
       {returnedNotice ? (
-        <Alert tone="warning" title={`Tâche renvoyée par ${review?.reviewedByName ?? 'l’admin'} le ${formatDate(review?.reviewedAt ?? task.deliveryDate)}`}>
-          {review?.note}
-        </Alert>
+        <div className="flex items-start gap-3 rounded-studio border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 ring-1 ring-amber-200/70">
+          <div>
+            <p className="font-semibold">Tâche renvoyée par {review?.reviewedByName ?? 'l’admin'} le {formatDate(review?.reviewedAt ?? task.deliveryDate)}</p>
+            <p className="mt-1">{review?.note}</p>
+          </div>
+        </div>
       ) : null}
       {approved ? (
-        <Alert tone="success" title="Tâche validée">
-          Validée par {review?.reviewedByName ?? 'l’admin'} le {formatDate(review?.reviewedAt ?? task.deliveryDate)}.
-        </Alert>
+        <div className="flex items-start gap-3 rounded-studio border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800 ring-1 ring-green-200/70">
+          <div>
+            <p className="font-semibold">Tâche validée</p>
+            <p className="mt-0.5">Validée par {review?.reviewedByName ?? 'l’admin'} le {formatDate(review?.reviewedAt ?? task.deliveryDate)}.</p>
+          </div>
+        </div>
       ) : null}
       {pendingReview ? (
         <Card className="flex flex-wrap items-center justify-between gap-4 border-studio-gold/40 bg-studio-gold/10">

@@ -7,7 +7,6 @@ import { formatDateTime } from '../../../shared/dates.ts';
 import { createUserSchema, resetPasswordFormSchema, type CreateUserInput, type ResetPasswordInput } from '../../../shared/schemas/user.ts';
 import type { UserSummary } from '../../../shared/types.ts';
 import {
-  Alert,
   Badge,
   Button,
   Card,
@@ -22,21 +21,22 @@ import {
   TableWrapper,
   Td,
   Th,
+  useConfirm,
+  useToast,
 } from '../../components/ui';
 import { ApiError, archiveUserApi, createUserApi, fetchUsers, resetUserPasswordApi, updateUserApi } from '../../lib/api';
 
 /** Gestion de l'équipe : l'administrateur crée les membres et leur attribue un rôle. */
 export const TeamPage: React.FC = () => {
+  const toast = useToast();
+  const confirm = useConfirm();
   const [users, setUsers] = useState<UserSummary[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [listError, setListError] = useState('');
-  const [formError, setFormError] = useState('');
-  const [feedback, setFeedback] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   /** Modale de réinitialisation du mot de passe d'un membre. */
   const [isResetOpen, setIsResetOpen] = useState(false);
   const [resetTarget, setResetTarget] = useState<UserSummary | null>(null);
-  const [resetError, setResetError] = useState('');
+
   /** Filtre d'affichage sur le nom, l'email ou le rôle. */
   const [search, setSearch] = useState('');
 
@@ -56,81 +56,73 @@ export const TeamPage: React.FC = () => {
   } = useForm<ResetPasswordInput>({ resolver: zodResolver(resetPasswordFormSchema) });
 
   const load = useCallback(async () => {
-    setListError('');
-
     try {
       const { users: loaded } = await fetchUsers();
       setUsers(loaded);
     } catch (error) {
-      setListError(error instanceof ApiError ? error.message : 'Chargement impossible.');
+      toast.error(error instanceof ApiError ? error.message : 'Chargement impossible.');
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [toast]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
   const onSubmit = handleSubmit(async (values) => {
-    setFormError('');
     try {
       await createUserApi(values);
       setIsModalOpen(false);
       reset();
-      setFeedback(
+      toast.success(
         `Membre « ${values.name} » créé. Il définira son mot de passe à la première connexion.`,
       );
       await load();
     } catch (error) {
-      setFormError(error instanceof ApiError ? error.message : 'Création impossible.');
+      toast.error(error instanceof ApiError ? error.message : 'Création impossible.');
     }
   });
 
   const handleRoleChange = async (user: UserSummary, role: string) => {
-    setFeedback('');
-
     try {
       await updateUserApi(user.id, { role: role as StaffRole });
       await load();
-      setFeedback(`Rôle de ${user.name} mis à jour.`);
+      toast.success(`Rôle de ${user.name} mis à jour.`);
     } catch (error) {
-      setListError(error instanceof ApiError ? error.message : 'Modification impossible.');
+      toast.error(error instanceof ApiError ? error.message : 'Modification impossible.');
     }
   };
 
   const handleToggleActive = async (user: UserSummary) => {
-    setListError('');
-    setFeedback('');
-
     try {
       await updateUserApi(user.id, { isActive: !user.isActive });
       await load();
     } catch (error) {
-      setListError(error instanceof ApiError ? error.message : 'Modification impossible.');
+      toast.error(error instanceof ApiError ? error.message : 'Modification impossible.');
     }
   };
 
   const handleArchive = async (user: UserSummary) => {
-    if (!window.confirm(`Archiver le compte de ${user.name} ? Il ne pourra plus se connecter.`)) {
-      return;
-    }
-
-    setListError('');
-    setFeedback('');
+    const ok = await confirm({
+      title: 'Archiver le membre',
+      message: `Archiver le compte de ${user.name} ? Il ne pourra plus se connecter.`,
+      confirmText: 'Archiver',
+      variant: 'danger',
+    });
+    if (!ok) return;
 
     try {
       await archiveUserApi(user.id);
       await load();
-      setFeedback(`Compte de ${user.name} archivé.`);
+      toast.success(`Compte de ${user.name} archivé.`);
     } catch (error) {
-      setListError(error instanceof ApiError ? error.message : 'Archivage impossible.');
+      toast.error(error instanceof ApiError ? error.message : 'Archivage impossible.');
     }
   };
 
   const openResetModal = (user: UserSummary) => {
     setResetTarget(user);
-    setResetError('');
     resetResetForm();
     setIsResetOpen(true);
   };
@@ -138,7 +130,6 @@ export const TeamPage: React.FC = () => {
   const closeResetModal = () => {
     setIsResetOpen(false);
     setResetTarget(null);
-    setResetError('');
     resetResetForm();
   };
 
@@ -147,18 +138,16 @@ export const TeamPage: React.FC = () => {
       return;
     }
 
-    setResetError('');
-
     try {
       const name = resetTarget.name;
       await resetUserPasswordApi(resetTarget.id, { password: values.password });
       closeResetModal();
       await load();
-      setFeedback(
+      toast.success(
         `Mot de passe de ${name} réinitialisé. Communiquez-lui le nouveau mot de passe : il devra le changer à sa prochaine connexion.`,
       );
     } catch (error) {
-      setResetError(error instanceof ApiError ? error.message : 'Réinitialisation impossible.');
+      toast.error(error instanceof ApiError ? error.message : 'Réinitialisation impossible.');
     }
   });
 
@@ -182,18 +171,6 @@ export const TeamPage: React.FC = () => {
           </Button>
         }
       />
-
-      {listError ? (
-        <Alert tone="error" className="mb-4">
-          {listError}
-        </Alert>
-      ) : null}
-
-      {feedback ? (
-        <Alert tone="success" className="mb-4">
-          {feedback}
-        </Alert>
-      ) : null}
 
       {users.length > 0 ? (
         <div className="mb-4 max-w-sm">
@@ -320,7 +297,6 @@ export const TeamPage: React.FC = () => {
         subtitle="Le membre se connecte avec cet email et définit son mot de passe à la première connexion."
         onClose={() => {
           setIsModalOpen(false);
-          setFormError('');
           reset();
         }}
         footer={
@@ -340,12 +316,6 @@ export const TeamPage: React.FC = () => {
           </>
         }
       >
-        {formError ? (
-          <Alert tone="error" className="mb-4">
-            {formError}
-          </Alert>
-        ) : null}
-
         <form id="create-member-form" onSubmit={onSubmit} className="space-y-4">
           <Field label="Nom complet" htmlFor="member-name" error={errors.name?.message}>
             <Input id="member-name" placeholder="Ex. Awa Traoré" {...register('name')} />
@@ -409,12 +379,6 @@ export const TeamPage: React.FC = () => {
           </>
         }
       >
-        {resetError ? (
-          <Alert tone="error" className="mb-4">
-            {resetError}
-          </Alert>
-        ) : null}
-
         <form id="reset-password-form" onSubmit={onSubmitReset} className="space-y-4">
           <Field
             label="Nouveau mot de passe provisoire"

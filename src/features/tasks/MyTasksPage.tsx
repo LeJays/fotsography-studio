@@ -4,14 +4,13 @@ import { Link } from 'react-router-dom'
 import { formatDate } from '../../../shared/dates.ts'
 import { formatAmount } from '../../../shared/money.ts'
 import type { TaskSummary } from '../../../shared/types.ts'
-import { Alert, Button, Card, CardGridSkeleton, EmptyState, Field, Input, Modal, PageHeader } from '../../components/ui'
+import { Button, Card, CardGridSkeleton, EmptyState, Field, Input, Modal, PageHeader, useToast } from '../../components/ui'
 import { ApiError, fetchMyTasks, updateOwnTaskApi } from '../../lib/api'
 import { lastReview, nextStatus, StatusPill } from './taskStatus'
 
 export const MyTasksPage = () => {
+  const toast = useToast()
   const [tasks, setTasks] = useState<TaskSummary[]>([])
-  const [error, setError] = useState('')
-  const [feedback, setFeedback] = useState('')
   const [loading, setLoading] = useState(true)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [proofTask, setProofTask] = useState<TaskSummary | null>(null)
@@ -20,13 +19,12 @@ export const MyTasksPage = () => {
   const load = useCallback(async () => {
     try {
       setTasks((await fetchMyTasks()).tasks)
-      setError('')
     } catch (reason) {
-      setError(reason instanceof ApiError ? reason.message : 'Chargement des tâches impossible.')
+      toast.error(reason instanceof ApiError ? reason.message : 'Chargement des tâches impossible.')
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [toast])
   useEffect(() => { void load() }, [load])
 
   /** Fait avancer le statut d'un cran : À faire → En cours → Terminée (boucle). */
@@ -42,11 +40,10 @@ export const MyTasksPage = () => {
     setBusyId(task.id)
     try {
       await updateOwnTaskApi(task.id, { status: target })
-      setFeedback(`« ${task.name} » : statut mis à jour.`)
-      setError('')
+      toast.success(`« ${task.name} » : statut mis à jour.`)
       await load()
     } catch (reason) {
-      setError(reason instanceof ApiError ? reason.message : 'Mise à jour impossible.')
+      toast.error(reason instanceof ApiError ? reason.message : 'Mise à jour impossible.')
     } finally {
       setBusyId(null)
     }
@@ -57,18 +54,17 @@ export const MyTasksPage = () => {
     if (!proofTask) return
     const link = proofLink.trim()
     if (!link) {
-      setError('Ajoutez le lien de la preuve avant de terminer la tâche.')
+      toast.error('Ajoutez le lien de la preuve avant de terminer la tâche.')
       return
     }
     setBusyId(proofTask.id)
     try {
       await updateOwnTaskApi(proofTask.id, { status: 'COMPLETED', proofLink: link })
-      setFeedback(`« ${proofTask.name} » marquée comme terminée.`)
-      setError('')
+      toast.success(`« ${proofTask.name} » marquée comme terminée.`)
       setProofTask(null)
       await load()
     } catch (reason) {
-      setError(reason instanceof ApiError ? reason.message : 'Mise à jour impossible.')
+      toast.error(reason instanceof ApiError ? reason.message : 'Mise à jour impossible.')
     } finally {
       setBusyId(null)
     }
@@ -80,8 +76,6 @@ export const MyTasksPage = () => {
         title="Mes tâches"
         subtitle="Cliquez sur le statut (en haut à droite de chaque carte) pour faire avancer la tâche : à faire → en cours → terminée."
       />
-      {error ? <Alert tone="error">{error}</Alert> : null}
-      {feedback ? <Alert tone="success">{feedback}</Alert> : null}
       {loading ? (
         <CardGridSkeleton />
       ) : tasks.length === 0 ? (

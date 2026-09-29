@@ -5,7 +5,7 @@ import { PAYMENT_TYPE_LABELS } from '../../../shared/consts.ts'
 import { formatDate, todayInputValue } from '../../../shared/dates.ts'
 import { formatAmount } from '../../../shared/money.ts'
 import type { PaymentType, ProjectDetail, ProjectStatus } from '../../../shared/types.ts'
-import { Alert, Badge, Button, Card, Field, Input, Modal, Select, Skeleton, StatCard, StatsSkeleton, TableWrapper, Td, Textarea, Th } from '../../components/ui'
+import { Badge, Button, Card, Field, Input, Modal, Select, Skeleton, StatCard, StatsSkeleton, TableWrapper, Td, Textarea, Th, useToast } from '../../components/ui'
 import { useAuth } from '../../context/AuthContext'
 import { ApiError, createPaymentApi, fetchProject } from '../../lib/api'
 import { downloadReceiptPdf, previewReceiptPdf } from '../../lib/receiptPdf'
@@ -16,10 +16,11 @@ const methodLabels = { CASH: 'Espèces', MOMO: 'Mobile Money', BANK: 'Virement b
 
 export const ProjectDetailPage = () => {
   const { isAdmin } = useAuth()
+  const toast = useToast()
   const { id } = useParams<{ id: string }>()
   const [project, setProject] = useState<ProjectDetail | null>(null)
-  const [error, setError] = useState('')
-  const [feedback, setFeedback] = useState('')
+
+
   const [loading, setLoading] = useState(true)
   const [isPaymentOpen, setIsPaymentOpen] = useState(false)
   const [paymentType, setPaymentType] = useState<PaymentType>('INTERMEDIATE_50')
@@ -29,13 +30,13 @@ export const ProjectDetailPage = () => {
     if (!id) return
     try {
       setProject((await fetchProject(id)).project)
-      setError('')
+
     } catch (reason) {
-      setError(reason instanceof ApiError ? reason.message : 'Chargement du projet impossible.')
+      toast.error(reason instanceof ApiError ? reason.message : 'Chargement du projet impossible.')
     } finally {
       setLoading(false)
     }
-  }, [id])
+  }, [id, toast])
 
   useEffect(() => { void load() }, [load])
 
@@ -47,7 +48,6 @@ export const ProjectDetailPage = () => {
   const openPayment = () => {
     const next = (['INTERMEDIATE_50', 'FINAL_20'] as PaymentType[]).find((type) => !registeredMilestones.has(type)) ?? 'CUSTOM'
     setPaymentType(next)
-    setError('')
     setIsPaymentOpen(true)
   }
 
@@ -57,12 +57,12 @@ export const ProjectDetailPage = () => {
     const customAmount = Number(form.get('amount'))
     const paymentDate = String(form.get('paymentDate') ?? '')
     if (!paymentDate || (type === 'CUSTOM' && (!Number.isFinite(customAmount) || customAmount <= 0))) {
-      setError('Renseignez une date et un montant valide pour un versement libre.')
+      toast.error('Renseignez une date et un montant valide pour un versement libre.')
       return
     }
 
     setIsSaving(true)
-    setError('')
+
     try {
       await createPaymentApi(project.id, {
         type,
@@ -73,22 +73,22 @@ export const ProjectDetailPage = () => {
         notes: String(form.get('notes') ?? '').trim(),
       })
       setIsPaymentOpen(false)
-      setFeedback('Paiement enregistré dans l’historique du projet.')
+      toast.success('Paiement enregistré dans l’historique du projet.')
       await load()
     } catch (reason) {
-      setError(reason instanceof ApiError ? reason.message : 'Enregistrement du paiement impossible.')
+      toast.error(reason instanceof ApiError ? reason.message : 'Enregistrement du paiement impossible.')
     } finally {
       setIsSaving(false)
     }
   }
   if (loading) return <div className="space-y-6" aria-hidden="true"><div className="flex items-center gap-3"><Skeleton className="h-10 w-10 rounded-full" /><div className="space-y-2"><Skeleton className="h-3 w-32" /><Skeleton className="h-6 w-64" /></div></div><StatsSkeleton /><Card className="space-y-3"><Skeleton className="h-5 w-40" /><Skeleton className="h-3 w-full" /><Skeleton className="h-3 w-2/3" /></Card></div>
-  if (!project) return <div className="space-y-4"><Alert tone="error">{error || 'Projet introuvable.'}</Alert><Link to="/projets"><Button variant="secondary"><ArrowLeft className="h-4 w-4" />Retour aux projets</Button></Link></div>
+  if (!project) return <div className="space-y-4"><Link to="/projets"><Button variant="secondary"><ArrowLeft className="h-4 w-4" />Retour aux projets</Button></Link></div>
 
   return <div className="space-y-6">
     <div className="flex flex-wrap items-start justify-between gap-4"><div className="flex gap-3"><Link to="/projets"><Button variant="ghost" size="sm"><ArrowLeft className="h-4 w-4" /></Button></Link><div><p className="text-xs font-semibold uppercase tracking-wide text-studio-terracotta">{project.clientName}</p><h1 className="font-serif text-2xl font-bold text-studio-dark">{project.eventName}</h1><p className="mt-1 flex items-center gap-2 text-sm text-studio-dark/55"><MapPin className="h-4 w-4" />{project.eventLocation} <CalendarDays className="ml-2 h-4 w-4" />{formatDate(project.eventDate)}</p></div></div><Badge tone={tones[project.status]}>{labels[project.status]}</Badge></div>
 
-    {feedback ? <Alert tone="success">{feedback}</Alert> : null}
-    {error ? <Alert tone="error">{error}</Alert> : null}
+
+
 
     <div className="studio-stagger grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
       {isAdmin ? <StatCard label="Montant total" value={formatAmount(project.totalAmount)} /> : <StatCard label="Client" value={project.clientName} />}

@@ -7,7 +7,6 @@ import { formatAmount } from '../../../shared/money.ts';
 import { createClientSchema, type CreateClientInput } from '../../../shared/schemas/client.ts';
 import type { ClientSummary } from '../../../shared/types.ts';
 import {
-  Alert,
   Badge,
   Button,
   Card,
@@ -21,6 +20,8 @@ import {
   SegmentedControl,
   StatCard,
   Textarea,
+  useConfirm,
+  useToast,
 } from '../../components/ui';
 import {
   ApiError,
@@ -31,14 +32,13 @@ import {
 } from '../../lib/api';
 
 export const ClientsPage = () => {
+  const toast = useToast();
+  const confirm = useConfirm();
   const [clients, setClients] = useState<ClientSummary[]>([]);
   const [search, setSearch] = useState('');
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [feedback, setFeedback] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingClient, setEditingClient] = useState<ClientSummary | null>(null);
-  const [formError, setFormError] = useState('');
   /** Filtre d'affichage : tous les clients, ceux qui doivent encore payer, ou les soldés. */
   const [filter, setFilter] = useState<'all' | 'due' | 'settled'>('all');
 
@@ -50,16 +50,15 @@ export const ClientsPage = () => {
   } = useForm<CreateClientInput>({ resolver: zodResolver(createClientSchema) });
 
   const loadClients = useCallback(async (searchQuery: string) => {
-    setError('');
     try {
       const { clients: loadedClients } = await fetchClients(searchQuery);
       setClients(loadedClients);
     } catch (requestError) {
-      setError(requestError instanceof ApiError ? requestError.message : 'Chargement des clients impossible.');
+      toast.error(requestError instanceof ApiError ? requestError.message : 'Chargement des clients impossible.');
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [toast]);
 
   useEffect(() => {
     const timeout = window.setTimeout(() => void loadClients(search), 250);
@@ -68,14 +67,12 @@ export const ClientsPage = () => {
 
   const openCreateModal = () => {
     setEditingClient(null);
-    setFormError('');
     reset({ name: '', email: '', phone: '', address: '', notes: '' });
     setIsModalOpen(true);
   };
 
   const openEditModal = (client: ClientSummary) => {
     setEditingClient(client);
-    setFormError('');
     reset({
       name: client.name,
       email: client.email ?? '',
@@ -89,30 +86,35 @@ export const ClientsPage = () => {
 
 
   const onSubmit = handleSubmit(async (values) => {
-    setFormError('');
     try {
       if (editingClient) {
         await updateClientApi(editingClient.id, values);
-        setFeedback('Client mis à jour.');
+        toast.success('Client mis à jour.');
       } else {
         await createClientApi(values);
-        setFeedback('Client ajouté avec succès.');
+        toast.success('Client ajouté avec succès.');
       }
       setIsModalOpen(false);
       await loadClients(search);
     } catch (requestError) {
-      setFormError(requestError instanceof ApiError ? requestError.message : 'Une erreur est survenue.');
+      toast.error(requestError instanceof ApiError ? requestError.message : 'Une erreur est survenue.');
     }
   });
 
   const handleArchive = async (client: ClientSummary) => {
-    if (!window.confirm(`Archiver le client « ${client.name} » ? Ses projets seront conservés.`)) return;
+    const ok = await confirm({
+      title: 'Archiver le client',
+      message: `Archiver le client « ${client.name} » ? Ses projets seront conservés.`,
+      confirmText: 'Archiver',
+      variant: 'danger',
+    });
+    if (!ok) return;
     try {
       await archiveClientApi(client.id);
-      setFeedback('Client archivé.');
+      toast.success('Client archivé.');
       await loadClients(search);
     } catch (requestError) {
-      setError(requestError instanceof ApiError ? requestError.message : 'Archivage impossible.');
+      toast.error(requestError instanceof ApiError ? requestError.message : 'Archivage impossible.');
     }
   };
 
@@ -144,8 +146,6 @@ export const ClientsPage = () => {
         subtitle="Gérez les contacts, les engagements et les créances."
         actions={<Button onClick={openCreateModal}><Plus className="h-4 w-4" />Nouveau client</Button>}
       />
-      {feedback ? <Alert tone="success">{feedback}</Alert> : null}
-      {error ? <Alert tone="error">{error}</Alert> : null}
       <div className="studio-stagger grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard label="Clients actifs" value={clients.length.toString()} hint="Fiches non archivées" />
         <StatCard label="Engagements" value={formatAmount(totals.totalAmount)} hint="Montant facturé" />
@@ -219,7 +219,6 @@ export const ClientsPage = () => {
         subtitle={editingClient ? `Mettez à jour les coordonnées de ${editingClient.name}.` : 'Ajoutez un contact client à votre répertoire.'}
       >
         <form className="space-y-4" onSubmit={onSubmit}>
-          {formError ? <Alert tone="error">{formError}</Alert> : null}
           <Field label="Nom complet *" error={errors.name?.message}>
             <Input {...register('name')} placeholder="Ex. Jean Dupont" autoFocus />
           </Field>

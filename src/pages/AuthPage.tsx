@@ -3,7 +3,7 @@ import { Lock, LogIn, Sparkles, UserPlus } from 'lucide-react';
 import { Navigate } from 'react-router-dom';
 import logoPicto from '../assets/Logo Fotsography Studio_LOGO FOTSOGRAPHY STUDIO COLOR PICTO.jpg';
 import type { RegisterPayload } from '../../shared/types.ts';
-import { Alert, LoadingScreen } from '../components/ui';
+import { LoadingScreen, useToast } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 import { ApiError, fetchSetupStatus } from '../lib/api';
 
@@ -32,12 +32,12 @@ const INITIAL_FORM: FormState = {
 
 export const AuthPage: React.FC = () => {
   const { user, isLoading, login, registerAdmin } = useAuth();
+  const toast = useToast();
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [needsAdmin, setNeedsAdmin] = useState(false);
   const [formData, setFormData] = useState<FormState>(INITIAL_FORM);
-  const [error, setError] = useState('');
 
   /** L'inscription n'est proposée que s'il n'existe encore aucun administrateur. */
   useEffect(() => {
@@ -57,30 +57,27 @@ export const AuthPage: React.FC = () => {
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setFormData((previous) => ({ ...previous, [name]: value }));
-    setError('');
   };
 
   const switchMode = (nextMode: 'login' | 'register') => {
     setMode(nextMode);
-    setError('');
   };
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!formData.identifier.trim() || !formData.password) {
-      setError('Veuillez saisir votre email (ou votre nom) et votre mot de passe.');
+      toast.error('Veuillez saisir votre email (ou votre nom) et votre mot de passe.');
       return;
     }
 
-    setError('');
     setIsSubmitting(true);
 
     try {
       // POST /api/auth/login → vérification du mot de passe haché dans Neon
       await login(formData.identifier.trim(), formData.password);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Connexion impossible. Réessayez.');
+      toast.error(err instanceof ApiError ? err.message : 'Connexion impossible. Réessayez.');
     } finally {
       setIsSubmitting(false);
     }
@@ -95,21 +92,20 @@ export const AuthPage: React.FC = () => {
       !formData.phone.trim() ||
       !formData.password
     ) {
-      setError('Veuillez remplir tous les champs obligatoires.');
+      toast.error('Veuillez remplir tous les champs obligatoires.');
       return;
     }
 
     if (formData.password.length < 6) {
-      setError('Le mot de passe doit contenir au moins 6 caractères.');
+      toast.error('Le mot de passe doit contenir au moins 6 caractères.');
       return;
     }
 
     if (formData.password !== formData.confirmPassword) {
-      setError('Les mots de passe ne correspondent pas.');
+      toast.error('Les mots de passe ne correspondent pas.');
       return;
     }
 
-    setError('');
     setIsSubmitting(true);
 
     try {
@@ -121,7 +117,7 @@ export const AuthPage: React.FC = () => {
         password: formData.password,
       });
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Inscription impossible. Réessayez.');
+      toast.error(err instanceof ApiError ? err.message : 'Inscription impossible. Réessayez.');
     } finally {
       setIsSubmitting(false);
     }
@@ -192,12 +188,6 @@ export const AuthPage: React.FC = () => {
               </p>
             </div>
           </div>
-
-          {error ? (
-            <Alert tone="error" className="mb-5">
-              {error}
-            </Alert>
-          ) : null}
 
           {/* ------------------ Mode connexion ------------------ */}
           {mode === 'login' && (

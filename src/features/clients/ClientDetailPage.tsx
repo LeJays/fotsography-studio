@@ -18,7 +18,6 @@ import { formatAmount } from '../../../shared/money.ts';
 import { updateClientSchema, type UpdateClientInput } from '../../../shared/schemas/client.ts';
 import type { ClientDetail, ClientProjectSummary } from '../../../shared/types.ts';
 import {
-  Alert,
   Badge,
   Button,
   Card,
@@ -33,6 +32,8 @@ import {
   Td,
   Textarea,
   Th,
+  useConfirm,
+  useToast,
 } from '../../components/ui';
 import { ApiError, archiveClientApi, fetchClient, updateClientApi } from '../../lib/api';
 
@@ -55,12 +56,11 @@ const projectStatusTone = (
 export const ClientDetailPage = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const toast = useToast();
+  const confirm = useConfirm();
   const [client, setClient] = useState<ClientDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [feedback, setFeedback] = useState('');
   const [isEditOpen, setIsEditOpen] = useState(false);
-  const [editError, setEditError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
   const {
@@ -73,16 +73,15 @@ export const ClientDetailPage = () => {
   const loadClient = useCallback(async () => {
     if (!id) return;
     setIsLoading(true);
-    setError('');
     try {
       const { client: loadedClient } = await fetchClient(id);
       setClient(loadedClient);
     } catch (requestError) {
-      setError(requestError instanceof ApiError ? requestError.message : 'Impossible de charger ce client.');
+      toast.error(requestError instanceof ApiError ? requestError.message : 'Impossible de charger ce client.');
     } finally {
       setIsLoading(false);
     }
-  }, [id]);
+  }, [id, toast]);
 
   useEffect(() => {
     void loadClient();
@@ -90,7 +89,6 @@ export const ClientDetailPage = () => {
 
   const openEditModal = () => {
     if (!client) return;
-    setEditError('');
     reset({
       name: client.name,
       email: client.email ?? '',
@@ -103,27 +101,34 @@ export const ClientDetailPage = () => {
 
   const onSave = handleSubmit(async (values) => {
     if (!client) return;
-    setEditError('');
     setIsSaving(true);
     try {
       await updateClientApi(client.id, values);
       setIsEditOpen(false);
-      setFeedback('Client mis à jour.');
+      toast.success('Client mis à jour.');
       await loadClient();
     } catch (requestError) {
-      setEditError(requestError instanceof ApiError ? requestError.message : 'Erreur lors de la mise à jour.');
+      toast.error(requestError instanceof ApiError ? requestError.message : 'Erreur lors de la mise à jour.');
     } finally {
       setIsSaving(false);
     }
   });
 
   const handleArchive = async () => {
-    if (!client || !window.confirm(`Archiver le client « ${client.name} » ?`)) return;
+    if (!client) return;
+    const ok = await confirm({
+      title: 'Archiver le client',
+      message: `Archiver le client « ${client.name} » ? Ses projets existants seront conservés.`,
+      confirmText: 'Archiver',
+      variant: 'danger',
+    });
+    if (!ok) return;
     try {
       await archiveClientApi(client.id);
+      toast.success('Client archivé.');
       navigate('/clients');
     } catch (requestError) {
-      setError(requestError instanceof ApiError ? requestError.message : 'Archivage impossible.');
+      toast.error(requestError instanceof ApiError ? requestError.message : 'Archivage impossible.');
     }
   };
 
@@ -147,10 +152,9 @@ export const ClientDetailPage = () => {
     );
   }
 
-  if (error || !client) {
+  if (!client) {
     return (
       <div className="space-y-4">
-        <Alert tone="error">{error || 'Client introuvable.'}</Alert>
         <Link to="/clients">
           <Button variant="secondary"><ArrowLeft className="h-4 w-4" />Retour aux clients</Button>
         </Link>
@@ -178,8 +182,6 @@ export const ClientDetailPage = () => {
           <Button variant="danger" onClick={() => void handleArchive()}><Trash2 className="h-4 w-4" />Archiver</Button>
         </div>
       </div>
-
-      {feedback ? <Alert tone="success">{feedback}</Alert> : null}
 
       <div className="studio-stagger grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard label="Projets" value={client.projectCount.toString()} hint="Projets actifs" />
@@ -262,7 +264,6 @@ export const ClientDetailPage = () => {
         subtitle={`Mettez à jour les coordonnées de ${client.name}.`}
       >
         <form className="space-y-4" onSubmit={onSave}>
-          {editError ? <Alert tone="error">{editError}</Alert> : null}
           <Field label="Nom complet *" error={errors.name?.message}><Input {...register('name')} autoFocus /></Field>
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Téléphone *" error={errors.phone?.message}><Input {...register('phone')} /></Field>

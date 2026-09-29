@@ -5,7 +5,6 @@ import { formatDate, toDateInputValue, todayInputValue } from '../../../shared/d
 import { formatAmount } from '../../../shared/money.ts'
 import type { ActivitySummary, AssignableUser, ExpenseSummary, TaskSummary } from '../../../shared/types.ts'
 import {
-  Alert,
   Badge,
   Button,
   Card,
@@ -19,6 +18,8 @@ import {
   Td,
   Textarea,
   Th,
+  useConfirm,
+  useToast,
 } from '../../components/ui'
 import { useAuth } from '../../context/AuthContext'
 import {
@@ -57,6 +58,8 @@ const amountFromForm = (form: FormData, field: string): number => {
 
 /** Fiche de second niveau : une activité et les tâches qui lui sont affectées. */
 export const ActivityDetailPage = () => {
+  const toast = useToast()
+  const confirm = useConfirm()
   const { id } = useParams<{ id: string }>()
   const { isAdmin } = useAuth()
   const navigate = useNavigate()
@@ -65,8 +68,6 @@ export const ActivityDetailPage = () => {
   const [expenses, setExpenses] = useState<ExpenseSummary[]>([])
   const [users, setUsers] = useState<AssignableUser[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState('')
-  const [feedback, setFeedback] = useState('')
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false)
   const [editingTask, setEditingTask] = useState<TaskSummary | null>(null)
   /** Membre sélectionné dans le modal « Distribuer une tâche » (contrôlé pour réagir au rôle). */
@@ -91,13 +92,12 @@ export const ActivityDetailPage = () => {
       const members: AssignableUser[] = usersResponse.users
       setUsers(members.filter((member) => member.isActive && member.role !== 'CLIENT'))
       setExpenses(expensesResponse.expenses)
-      setError('')
     } catch (requestError) {
-      setError(requestError instanceof ApiError ? requestError.message : 'Chargement de l’activité impossible.')
+      toast.error(requestError instanceof ApiError ? requestError.message : 'Chargement de l’activité impossible.')
     } finally {
       setIsLoading(false)
     }
-  }, [id, isAdmin])
+  }, [id, isAdmin, toast])
 
   useEffect(() => {
     void load()
@@ -106,19 +106,16 @@ export const ActivityDetailPage = () => {
   const openCreateTaskModal = () => {
     setEditingTask(null)
     setTaskAssigneeId(users[0]?.id ?? '')
-    setError('')
     setIsTaskModalOpen(true)
   }
 
   const openCreateExpenseModal = () => {
     setEditingExpense(null)
-    setError('')
     setIsExpenseModalOpen(true)
   }
 
   const openEditExpenseModal = (expense: ExpenseSummary) => {
     setEditingExpense(expense)
-    setError('')
     setIsExpenseModalOpen(true)
   }
 
@@ -128,46 +125,49 @@ export const ActivityDetailPage = () => {
     const amount = Number(form.get('amount'))
     const expenseDate = String(form.get('expenseDate') ?? '')
     if (!description || !Number.isFinite(amount) || amount <= 0 || !expenseDate) {
-      setError('La description, le montant et la date de la dépense sont obligatoires.')
+      toast.error('La description, le montant et la date de la dépense sont obligatoires.')
       return
     }
 
     setIsSaving(true)
-    setError('')
     try {
       const payload = { description, amount: Math.round(amount), expenseDate, supplier: String(form.get('supplier') ?? '').trim() }
       if (editingExpense) {
         await updateExpenseApi(editingExpense.id, payload)
-        setFeedback('Dépense mise à jour.')
+        toast.success('Dépense mise à jour.')
       } else {
         await createExpenseApi({ activityId: activity.id, ...payload })
-        setFeedback('Dépense ajoutée à l’activité.')
+        toast.success('Dépense ajoutée à l’activité.')
       }
       setIsExpenseModalOpen(false)
       await load()
     } catch (requestError) {
-      setError(requestError instanceof ApiError ? requestError.message : 'Enregistrement de la dépense impossible.')
+      toast.error(requestError instanceof ApiError ? requestError.message : 'Enregistrement de la dépense impossible.')
     } finally {
       setIsSaving(false)
     }
   }
 
   const removeExpense = async (expense: ExpenseSummary) => {
-    if (!window.confirm(`Supprimer la dépense « ${expense.description} » ?`)) return
-    setError('')
+    const ok = await confirm({
+      title: 'Supprimer la dépense',
+      message: `Supprimer la dépense « ${expense.description} » ?`,
+      confirmText: 'Supprimer',
+      variant: 'danger',
+    });
+    if (!ok) return;
     try {
       await archiveExpenseApi(expense.id)
-      setFeedback('Dépense supprimée.')
+      toast.success('Dépense supprimée.')
       await load()
     } catch (requestError) {
-      setError(requestError instanceof ApiError ? requestError.message : 'Suppression de la dépense impossible.')
+      toast.error(requestError instanceof ApiError ? requestError.message : 'Suppression de la dépense impossible.')
     }
   }
 
   const openEditTaskModal = (task: TaskSummary) => {
     setEditingTask(task)
     setTaskAssigneeId(task.assignedUserId)
-    setError('')
     setIsTaskModalOpen(true)
   }
 
@@ -182,12 +182,11 @@ export const ActivityDetailPage = () => {
     const name = String(form.get('name') ?? '').trim()
     const assignedUserId = String(form.get('assignedUserId') ?? '')
     if (!name || !assignedUserId) {
-      setError('Le membre et le nom de la tâche sont obligatoires.')
+      toast.error('Le membre et le nom de la tâche sont obligatoires.')
       return
     }
 
     setIsSaving(true)
-    setError('')
     try {
       const assigneeIsAdmin = users.find((user) => user.id === assignedUserId)?.role === 'ADMIN'
       const description = String(form.get('description') ?? '').trim()
@@ -201,29 +200,34 @@ export const ActivityDetailPage = () => {
       }
       if (editingTask) {
         await updateTaskApi(editingTask.id, payload)
-        setFeedback('Tâche mise à jour.')
+        toast.success('Tâche mise à jour.')
       } else {
         await createTaskApi({ activityId: activity.id, ...payload })
-        setFeedback('Tâche distribuée. Sa date de livraison est calculée automatiquement à J‑5.')
+        toast.success('Tâche distribuée. Sa date de livraison est calculée automatiquement à J‑5.')
       }
       setIsTaskModalOpen(false)
       await load()
     } catch (requestError) {
-      setError(requestError instanceof ApiError ? requestError.message : 'Enregistrement de la tâche impossible.')
+      toast.error(requestError instanceof ApiError ? requestError.message : 'Enregistrement de la tâche impossible.')
     } finally {
       setIsSaving(false)
     }
   }
 
   const removeTask = async (task: TaskSummary) => {
-    if (!window.confirm(`Supprimer la tâche « ${task.name} » ?`)) return
-    setError('')
+    const ok = await confirm({
+      title: 'Supprimer la tâche',
+      message: `Supprimer la tâche « ${task.name} » ?`,
+      confirmText: 'Supprimer',
+      variant: 'danger',
+    });
+    if (!ok) return;
     try {
       await archiveTaskApi(task.id)
-      setFeedback('Tâche supprimée.')
+      toast.success('Tâche supprimée.')
       await load()
     } catch (requestError) {
-      setError(requestError instanceof ApiError ? requestError.message : 'Suppression de la tâche impossible.')
+      toast.error(requestError instanceof ApiError ? requestError.message : 'Suppression de la tâche impossible.')
     }
   }
 
@@ -231,34 +235,41 @@ export const ActivityDetailPage = () => {
     if (!activity) return
     const name = String(form.get('name') ?? '').trim()
     if (!name) {
-      setError('Le nom de l’activité est obligatoire.')
+      toast.error('Le nom de l’activité est obligatoire.')
       return
     }
 
     setIsSaving(true)
-    setError('')
     try {
       await updateActivityApi(activity.id, {
         name,
         description: String(form.get('description') ?? '').trim(),
       })
       setIsActivityModalOpen(false)
-      setFeedback('Activité mise à jour.')
+      toast.success('Activité mise à jour.')
       await load()
     } catch (requestError) {
-      setError(requestError instanceof ApiError ? requestError.message : 'Modification de l’activité impossible.')
+      toast.error(requestError instanceof ApiError ? requestError.message : 'Modification de l’activité impossible.')
     } finally {
       setIsSaving(false)
     }
   }
 
   const removeActivity = async () => {
-    if (!activity || !window.confirm(`Supprimer l’activité « ${activity.name} » et ses tâches ?`)) return
+    if (!activity) return;
+    const ok = await confirm({
+      title: 'Supprimer l’activité',
+      message: `Supprimer l’activité « ${activity.name} » et toutes ses tâches ?`,
+      confirmText: 'Supprimer',
+      variant: 'danger',
+    });
+    if (!ok) return;
     try {
       await archiveActivityApi(activity.id)
+      toast.success('Activité supprimée.')
       navigate('/taches')
     } catch (requestError) {
-      setError(requestError instanceof ApiError ? requestError.message : 'Suppression de l’activité impossible.')
+      toast.error(requestError instanceof ApiError ? requestError.message : 'Suppression de l’activité impossible.')
     }
   }
 
@@ -269,7 +280,9 @@ export const ActivityDetailPage = () => {
   if (!activity) {
     return (
       <div className="space-y-4">
-        <Alert tone="error">{error || 'Activité introuvable.'}</Alert>
+        <div className="rounded-xl border border-studio-terracotta/30 bg-studio-terracotta/10 px-4 py-3 text-sm text-studio-terracotta">
+          Activité introuvable ou vous n’avez pas accès à cette fiche.
+        </div>
         <Link to="/taches">
           <Button variant="secondary"><ArrowLeft className="h-4 w-4" />Retour aux activités</Button>
         </Link>
@@ -300,9 +313,6 @@ export const ActivityDetailPage = () => {
         }
       />
 
-      {feedback ? <Alert tone="success">{feedback}</Alert> : null}
-      {error ? <Alert tone="error">{error}</Alert> : null}
-
       <Card className="space-y-2">
         <p className="text-xs font-semibold uppercase tracking-wide text-studio-terracotta">Projet</p>
         <p className="font-serif text-xl font-bold text-studio-dark">{activity.projectName}</p>
@@ -323,7 +333,9 @@ export const ActivityDetailPage = () => {
         </div>
 
         {users.length === 0 ? (
-          <Alert tone="info">Aucun membre actif ne peut recevoir une tâche pour le moment.</Alert>
+          <p className="rounded-xl border border-studio-gold/30 bg-studio-gold/10 px-4 py-3 text-sm text-studio-dark/70">
+            Aucun membre actif ne peut recevoir une tâche pour le moment.
+          </p>
         ) : null}
 
         {tasks.length === 0 ? (
@@ -463,11 +475,15 @@ export const ActivityDetailPage = () => {
                 )}
               </div>
               {taskAssigneeIsAdmin ? (
-                <Alert tone="info">Tâche assignée à l’administrateur : seul le montant demandé au client est renseigné, aucune rémunération membre n’est prévue.</Alert>
+                <p className="rounded-xl border border-studio-gold/30 bg-studio-gold/10 px-4 py-3 text-xs leading-relaxed text-studio-dark/70">
+                  Tâche assignée à l’administrateur : seul le montant demandé au client est renseigné, aucune rémunération membre n’est prévue.
+                </p>
               ) : null}
             </>
           ) : (
-            <Alert tone="info">Les montants (part client et rémunération) sont renseignés par l’administrateur.</Alert>
+            <p className="rounded-xl border border-studio-gold/30 bg-studio-gold/10 px-4 py-3 text-xs leading-relaxed text-studio-dark/70">
+              Les montants (part client et rémunération) sont renseignés par l’administrateur.
+            </p>
           )}
           <div className="flex justify-end gap-2 border-t border-studio-dark/10 pt-4">
             <Button variant="ghost" onClick={closeTaskModal}>Annuler</Button>
