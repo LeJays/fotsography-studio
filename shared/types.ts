@@ -153,6 +153,8 @@ export interface ProjectSummary {
 
 export interface ProjectDetail extends ProjectSummary {
   notes: string | null
+  clientPhone: string | null
+  clientEmail: string | null
   payments: PaymentSummary[]
   receipts: ReceiptSummary[]
   expenses: ProjectExpenseSummary[]
@@ -288,6 +290,7 @@ export interface TaskReviewSummary {
 export interface TaskSummary {
   id: string
   name: string
+  description: string | null
   activityId: string
   activityName: string
   projectName: string
@@ -322,7 +325,7 @@ export interface ReviewTaskPayload {
 }
 
 export interface CreateActivityPayload { projectId: string; name: string; description?: string }
-export interface CreateTaskPayload { activityId: string; assignedUserId: string; name: string; clientPriceShare?: number; memberPayout?: number }
+export interface CreateTaskPayload { activityId: string; assignedUserId: string; name: string; description?: string; clientPriceShare?: number; memberPayout?: number }
 export interface CreateExpensePayload { activityId: string; description: string; supplier?: string; amount: number; expenseDate: string }
 export interface UpdateExpensePayload { description?: string; supplier?: string; amount?: number; expenseDate?: string }
 

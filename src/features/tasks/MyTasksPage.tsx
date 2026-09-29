@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom'
 import { formatDate } from '../../../shared/dates.ts'
 import { formatAmount } from '../../../shared/money.ts'
 import type { TaskSummary } from '../../../shared/types.ts'
-import { Alert, Button, Card, EmptyState, Field, Input, Modal, PageHeader } from '../../components/ui'
+import { Alert, Button, Card, CardGridSkeleton, EmptyState, Field, Input, Modal, PageHeader } from '../../components/ui'
 import { ApiError, fetchMyTasks, updateOwnTaskApi } from '../../lib/api'
 import { lastReview, nextStatus, StatusPill } from './taskStatus'
 
@@ -83,11 +83,11 @@ export const MyTasksPage = () => {
       {error ? <Alert tone="error">{error}</Alert> : null}
       {feedback ? <Alert tone="success">{feedback}</Alert> : null}
       {loading ? (
-        <Card className="p-12 text-center text-sm text-studio-dark/55">Chargement de vos tâches…</Card>
+        <CardGridSkeleton />
       ) : tasks.length === 0 ? (
         <EmptyState icon={<ListChecks className="h-6 w-6" />} title="Aucune tâche pour le moment" description="Vos tâches assignées apparaîtront ici." />
       ) : (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <div className="studio-stagger grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {tasks.map((task) => {
             const review = lastReview(task)
             const returned = review?.decision === 'RETURNED' && task.status !== 'COMPLETED'
@@ -102,6 +102,9 @@ export const MyTasksPage = () => {
                     <h2 className="mt-1 font-serif text-lg font-bold">
                       <Link to={`/taches/${task.id}`} className="hover:text-studio-terracotta">{task.name}</Link>
                     </h2>
+                    {task.description ? (
+                      <p className="mt-1.5 line-clamp-2 text-xs leading-relaxed text-studio-dark/60">{task.description}</p>
+                    ) : null}
                   </div>
                   <StatusPill task={task} onCycle={cycle} />
                 </div>

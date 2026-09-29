@@ -3,6 +3,31 @@ import { PAYMENT_TYPE_LABELS } from '../../shared/consts.ts'
 import { formatDate, formatDateTime } from '../../shared/dates.ts'
 import { formatAmount } from '../../shared/money.ts'
 import type { PaymentMethod, PaymentSummary, ProjectDetail, ReceiptSummary, TaskPayoutSummary, TaskSummary } from '../../shared/types.ts'
+import { fetchSettings } from './api.ts'
+
+/** Coordonnées du studio affichées dans l'en-tête des documents. */
+interface StudioInfo { name: string; phone: string | null; email: string | null }
+
+/** Charge le nom, le téléphone et l'email du studio (réglages) avec repli sur la marque par défaut. */
+const loadStudioInfo = async (): Promise<StudioInfo> => {
+  const fallback: StudioInfo = { name: 'Fotsography Studio', phone: null, email: null }
+  try {
+    const { settings } = await fetchSettings()
+    const name = typeof settings.name === 'string' && settings.name.trim() ? settings.name.trim() : fallback.name
+    const phone = typeof settings.phone === 'string' && settings.phone.trim() ? settings.phone.trim() : null
+    const email = typeof settings.email === 'string' && settings.email.trim() ? settings.email.trim() : null
+    return { name, phone, email }
+  } catch {
+    return fallback
+  }
+}
+
+/** Découpe le nom du studio pour conserver le doré sur le dernier mot (« Fotsography Studio »). */
+const splitBrand = (name: string): [string, string] => {
+  const parts = name.trim().split(/\s+/)
+  return parts.length > 1 ? [parts.slice(0, -1).join(' '), parts[parts.length - 1]] : [name, '']
+}
+
 
 const styles = StyleSheet.create({
   page: { padding: 38, fontFamily: 'Helvetica', color: '#1f2933', fontSize: 10, backgroundColor: '#fffdf9' },
@@ -22,20 +47,22 @@ const styles = StyleSheet.create({
   footer: { position: 'absolute', left: 38, right: 38, bottom: 30, borderTopWidth: 1, borderTopColor: '#ded6ce', paddingTop: 9, color: '#766e66', fontSize: 8, textAlign: 'center' },
 })
 
-const ReceiptDocument = ({ project, receipt, payment }: { project: ProjectDetail; receipt: ReceiptSummary; payment?: PaymentSummary }) => {
+const ReceiptDocument = ({ project, receipt, payment, studio }: { project: ProjectDetail; receipt: ReceiptSummary; payment?: PaymentSummary; studio: StudioInfo }) => {
   const isFinal = receipt.isFinalInvoice
+  const [brandHead, brandTail] = splitBrand(studio.name)
   const expenseTotal = project.expenses.reduce((total, expense) => total + expense.amount, 0)
   return <Document title={`${isFinal ? 'Facture finale' : 'Reçu'} ${receipt.number}`} author="Fotsography Studio"><Page size="A4" style={styles.page}>
-    <View style={styles.top}><View><Text style={styles.brand}>Fotsography <Text style={styles.gold}>Studio</Text></Text><Text style={styles.small}>PHOTOGRAPHY & VIDEOGRAPHY</Text></View><View><Text style={styles.label}>Document n°</Text><Text style={styles.value}>{receipt.number}</Text><Text style={styles.small}>Émis le {formatDate(receipt.issuedAt)}</Text></View></View>
+    <View style={styles.top}><View><Text style={styles.brand}>{brandHead}{brandTail ? <Text style={styles.gold}> {brandTail}</Text> : null}</Text><Text style={styles.small}>PHOTOGRAPHY & VIDEOGRAPHY</Text>{studio.phone ? <Text style={styles.small}>{studio.phone}</Text> : null}{studio.email ? <Text style={styles.small}>{studio.email}</Text> : null}</View><View><Text style={styles.label}>Document n°</Text><Text style={styles.value}>{receipt.number}</Text><Text style={styles.small}>Émis le {formatDateTime(receipt.issuedAt)}</Text></View></View>
     <Text style={styles.title}>{isFinal ? 'FACTURE FINALE' : 'REÇU DE PAIEMENT'}</Text><Text style={styles.number}>{project.eventName}</Text>
-    <View style={styles.section}><Text style={styles.label}>Facturé à</Text><Text style={styles.value}>{project.clientName}</Text><Text style={styles.small}>Événement : {project.eventName} · {project.eventLocation}</Text><Text style={styles.small}>Date de l'événement : {formatDate(project.eventDate)}</Text></View>
+    <View style={styles.section}><Text style={styles.label}>Facturé à</Text><Text style={styles.value}>{project.clientName}</Text>{project.clientPhone ? <Text style={styles.small}>Téléphone : {project.clientPhone}</Text> : null}{project.clientEmail ? <Text style={styles.small}>Email : {project.clientEmail}</Text> : null}<Text style={styles.small}>Événement : {project.eventName} · {project.eventLocation}</Text><Text style={styles.small}>Date de l'événement : {formatDate(project.eventDate)}</Text></View>
     {isFinal ? <><View style={styles.row}><Text>Montant total de la prestation</Text><Text style={styles.value}>{formatAmount(project.totalAmount)}</Text></View><Text style={{ ...styles.label, marginTop: 18 }}>Historique des paiements</Text><View style={styles.tableHeader}><Text style={styles.cellDate}>Date et heure</Text><Text style={styles.cellMethod}>Moyen</Text><Text style={styles.cellReference}>Référence</Text><Text style={styles.cellAmount}>Montant</Text></View>{project.payments.map((item) => <View key={item.id} style={styles.tableRow}><Text style={styles.cellDate}>{formatDateTime(item.paymentDate)}</Text><Text style={styles.cellMethod}>{item.method === 'MOMO' ? 'Mobile Money' : item.method === 'BANK' ? 'Virement' : 'Espèces'}</Text><Text style={styles.cellReference}>{item.reference || '—'}</Text><Text style={styles.cellAmount}>{formatAmount(item.amount)}</Text></View>)}<Text style={{ ...styles.label, marginTop: 18 }}>Dépenses du projet</Text>{project.expenses.length ? <><View style={styles.tableHeader}><Text style={styles.cellDate}>Date</Text><Text style={styles.cellMethod}>Activité</Text><Text style={styles.cellReference}>Dépense / fournisseur</Text><Text style={styles.cellAmount}>Montant</Text></View>{project.expenses.map((expense) => <View key={expense.id} style={styles.tableRow}><Text style={styles.cellDate}>{formatDate(expense.expenseDate)}</Text><Text style={styles.cellMethod}>{expense.activityName}</Text><Text style={styles.cellReference}>{expense.description}{expense.supplier ? ` - ${expense.supplier}` : ''}</Text><Text style={styles.cellAmount}>{formatAmount(expense.amount)}</Text></View>)}</> : <Text style={styles.small}>Aucune dépense enregistrée.</Text>}<View style={styles.row}><Text style={styles.value}>Total des dépenses</Text><Text style={styles.value}>{formatAmount(expenseTotal)}</Text></View><View style={styles.total}><Text style={styles.value}>TOTAL RÉGLÉ</Text><Text style={styles.value}>{formatAmount(project.paidAmount)}</Text></View></> : <><View style={styles.row}><Text>Nature du règlement</Text><Text style={styles.value}>{payment ? PAYMENT_TYPE_LABELS[payment.type] : PAYMENT_TYPE_LABELS[receipt.type]}</Text></View><View style={styles.row}><Text>Date de paiement</Text><Text style={styles.value}>{payment ? formatDate(payment.paymentDate) : formatDate(receipt.issuedAt)}</Text></View><View style={styles.row}><Text>Mode de paiement</Text><Text style={styles.value}>{payment?.method === 'MOMO' ? 'Mobile Money' : payment?.method === 'BANK' ? 'Virement bancaire' : 'Espèces'}</Text></View><View style={styles.total}><Text style={styles.value}>MONTANT REÇU</Text><Text style={styles.value}>{formatAmount(receipt.amount)}</Text></View></>}
     <Text style={styles.footer}>Merci pour votre confiance. Ce document confirme l'enregistrement du règlement par Fotsography Studio.</Text>
   </Page></Document>
 }
 
 export const downloadReceiptPdf = async (project: ProjectDetail, receipt: ReceiptSummary, payment?: PaymentSummary): Promise<void> => {
-  const blob = await pdf(<ReceiptDocument project={project} receipt={receipt} payment={payment} />).toBlob()
+  const studio = await loadStudioInfo()
+  const blob = await pdf(<ReceiptDocument project={project} receipt={receipt} payment={payment} studio={studio} />).toBlob()
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url
@@ -49,7 +76,8 @@ export const previewReceiptPdf = async (project: ProjectDetail, receipt: Receipt
   const previewWindow = window.open('', '_blank')
   if (!previewWindow) return
   previewWindow.document.title = receipt.number
-  const blob = await pdf(<ReceiptDocument project={project} receipt={receipt} payment={payment} />).toBlob()
+  const studio = await loadStudioInfo()
+  const blob = await pdf(<ReceiptDocument project={project} receipt={receipt} payment={payment} studio={studio} />).toBlob()
   const url = URL.createObjectURL(blob)
   previewWindow.location.href = url
 }
@@ -130,4 +158,14 @@ export const downloadTaskPayoutReceipt = async (task: TaskSummary, payout: TaskP
   link.download = `recu-${payout.receiptNumber ?? 'rémuneration'}.pdf`
   link.click()
   URL.revokeObjectURL(url)
+}
+
+/** Ouvre le reçu de rémunération dans un nouvel onglet, sans le télécharger. */
+export const previewTaskPayoutReceipt = async (task: TaskSummary, payout: TaskPayoutSummary): Promise<void> => {
+  const previewWindow = window.open('', '_blank')
+  if (!previewWindow) return
+  previewWindow.document.title = payout.receiptNumber ?? 'Reçu de rémunération'
+  const blob = await pdf(<TaskPayoutReceiptDocument task={task} payout={payout} />).toBlob()
+  const url = URL.createObjectURL(blob)
+  previewWindow.location.href = url
 }

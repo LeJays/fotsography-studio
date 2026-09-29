@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
-import { ArrowLeft, CalendarDays, CheckCircle2, Download, ExternalLink, Undo2, Wallet } from 'lucide-react'
+import { ArrowLeft, CalendarDays, CheckCircle2, Download, Eye, ExternalLink, Undo2, Wallet } from 'lucide-react'
 import { Link, useParams } from 'react-router-dom'
 import { formatDate } from '../../../shared/dates.ts'
 import { formatAmount } from '../../../shared/money.ts'
@@ -7,7 +7,7 @@ import type { PaymentMethod, TaskSummary } from '../../../shared/types.ts'
 import { Alert, Button, Card, Field, Input, Modal, PageHeader, Select, StatCard, TableWrapper, Td, Textarea, Th } from '../../components/ui'
 import { useAuth } from '../../context/AuthContext'
 import { ApiError, fetchTask, payTaskPayoutApi, reviewTaskApi, updateOwnTaskApi } from '../../lib/api'
-import { downloadTaskPayoutReceipt } from '../../lib/receiptPdf'
+import { downloadTaskPayoutReceipt, previewTaskPayoutReceipt } from '../../lib/receiptPdf'
 import { lastReview, nextStatus, StatusPill, STATUS_LABELS } from './taskStatus'
 
 const METHOD_LABELS: Record<PaymentMethod, string> = { CASH: 'Espèces', MOMO: 'Mobile Money', BANK: 'Virement' }
@@ -80,6 +80,12 @@ export const TaskDetailPage = () => {
         <h2 className="font-serif text-xl font-bold">Informations de la tâche</h2>
         <p><strong>Projet :</strong> {task.projectName}</p>
         <p><strong>Activité :</strong> {task.activityName}</p>
+        {task.description ? (
+          <div className="rounded-lg border border-studio-dark/10 bg-studio-cream/40 px-4 py-3">
+            <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-studio-dark/45">Description</p>
+            <p className="whitespace-pre-wrap text-sm leading-relaxed text-studio-dark/80">{task.description}</p>
+          </div>
+        ) : null}
         {task.proofLink ? <p><strong>Preuve :</strong> <a className="inline-flex items-center gap-1 text-studio-terracotta underline" href={task.proofLink} target="_blank" rel="noreferrer">Ouvrir la photo ou vidéo <ExternalLink className="h-3.5 w-3.5" /></a></p> : <p className="text-studio-dark/55">Aucune preuve envoyée pour le moment.</p>}
       </Card>
       <form action={saveProgress} className="grid gap-4 rounded-3xl border border-studio-dark/10 bg-white p-6 shadow-sm md:grid-cols-3">
@@ -156,7 +162,10 @@ export const TaskDetailPage = () => {
                       <Td>{payout.paidByName || '—'}</Td>
                       <Td>
                         {payout.receiptNumber ? (
-                          <Button size="sm" variant="secondary" onClick={() => void downloadTaskPayoutReceipt(task, payout)}><Download className="h-3.5 w-3.5" /> PDF</Button>
+                          <div className="flex items-center gap-1">
+                            <Button size="sm" variant="ghost" title="Voir le reçu" onClick={() => void previewTaskPayoutReceipt(task, payout)}><Eye className="h-3.5 w-3.5" /></Button>
+                            <Button size="sm" variant="secondary" onClick={() => void downloadTaskPayoutReceipt(task, payout)}><Download className="h-3.5 w-3.5" /> PDF</Button>
+                          </div>
                         ) : (
                           <span className="text-xs text-studio-dark/45">Indisponible</span>
                         )}

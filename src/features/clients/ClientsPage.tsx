@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { Link } from 'react-router-dom';
-import { Edit2, Mail, Phone, Plus, Search, Trash2, Users } from 'lucide-react';
+import { Edit2, Mail, Phone, Plus, Trash2, Users } from 'lucide-react';
 import { formatAmount } from '../../../shared/money.ts';
 import { createClientSchema, type CreateClientInput } from '../../../shared/schemas/client.ts';
 import type { ClientSummary } from '../../../shared/types.ts';
@@ -11,11 +11,14 @@ import {
   Badge,
   Button,
   Card,
+  CardGridSkeleton,
   EmptyState,
   Field,
   Input,
   Modal,
   PageHeader,
+  SearchInput,
+  SegmentedControl,
   StatCard,
   Textarea,
 } from '../../components/ui';
@@ -36,6 +39,8 @@ export const ClientsPage = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingClient, setEditingClient] = useState<ClientSummary | null>(null);
   const [formError, setFormError] = useState('');
+  /** Filtre d'affichage : tous les clients, ceux qui doivent encore payer, ou les soldés. */
+  const [filter, setFilter] = useState<'all' | 'due' | 'settled'>('all');
 
   const {
     register,
@@ -123,6 +128,15 @@ export const ClientsPage = () => {
     [clients],
   );
 
+  const remainingCount = clients.filter((client) => client.remainingAmount > 0).length;
+  const visibleClients = useMemo(
+    () =>
+      clients.filter((client) =>
+        filter === 'due' ? client.remainingAmount > 0 : filter === 'settled' ? client.remainingAmount === 0 : true,
+      ),
+    [clients, filter],
+  );
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -132,40 +146,47 @@ export const ClientsPage = () => {
       />
       {feedback ? <Alert tone="success">{feedback}</Alert> : null}
       {error ? <Alert tone="error">{error}</Alert> : null}
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="studio-stagger grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard label="Clients actifs" value={clients.length.toString()} hint="Fiches non archivées" />
         <StatCard label="Engagements" value={formatAmount(totals.totalAmount)} hint="Montant facturé" />
         <StatCard label="Encaissé" value={formatAmount(totals.paidAmount)} hint="Paiements reçus" />
         <StatCard label="Reste dû" value={formatAmount(totals.remainingAmount)} hint="Créances en cours" />
       </div>
-      <Card className="p-4">
-        <label htmlFor="client-search" className="sr-only">Rechercher un client</label>
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-studio-dark/40" />
-          <Input
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="min-w-64 flex-1">
+          <label htmlFor="client-search" className="sr-only">Rechercher un client</label>
+          <SearchInput
             id="client-search"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             placeholder="Rechercher par nom, téléphone, email ou ville…"
-            className="pl-10"
           />
         </div>
-      </Card>
+        <SegmentedControl
+          value={filter}
+          onChange={setFilter}
+          options={[
+            { value: 'all', label: 'Tous', count: clients.length },
+            { value: 'due', label: 'Reste dû', count: remainingCount },
+            { value: 'settled', label: 'Soldés', count: clients.length - remainingCount },
+          ]}
+        />
+      </div>
 
 
       {isLoading ? (
-        <Card className="p-12 text-center text-sm text-studio-dark/55">Chargement de la liste des clients…</Card>
-      ) : clients.length === 0 ? (
+        <CardGridSkeleton />
+      ) : visibleClients.length === 0 ? (
         <EmptyState
           icon={<Users className="h-6 w-6" />}
-          title={search ? 'Aucun client trouvé' : 'Aucun client enregistré'}
-          description={search ? 'Modifiez votre recherche pour trouver un autre contact.' : 'Ajoutez votre premier client pour commencer.'}
-          action={<Button onClick={openCreateModal}><Plus className="h-4 w-4" />Nouveau client</Button>}
+          title={search ? 'Aucun client trouvé' : filter === 'all' ? 'Aucun client enregistré' : 'Aucun client dans ce filtre'}
+          description={search ? 'Modifiez votre recherche pour trouver un autre contact.' : filter === 'all' ? 'Ajoutez votre premier client pour commencer.' : 'Changez de filtre pour consulter les autres fiches clients.'}
+          action={search || filter !== 'all' ? undefined : <Button onClick={openCreateModal}><Plus className="h-4 w-4" />Nouveau client</Button>}
         />
       ) : (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {clients.map((client) => (
-            <Card key={client.id} className="space-y-4 transition hover:-translate-y-0.5 hover:shadow-md">
+        <div className="studio-stagger grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {visibleClients.map((client) => (
+            <Card key={client.id} className="studio-card-hover space-y-4">
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <Link to={`/clients/${client.id}`} className="font-serif text-xl font-bold text-studio-dark hover:underline">{client.name}</Link>
@@ -194,7 +215,7 @@ export const ClientsPage = () => {
       <Modal
         open={isModalOpen}
         onClose={() => setIsModalOpen(false)}
-        title={editingClient ? 'Modifier le client' : 'Nouveau client'}
+        size="lg" title={editingClient ? 'Modifier le client' : 'Nouveau client'}
         subtitle={editingClient ? `Mettez à jour les coordonnées de ${editingClient.name}.` : 'Ajoutez un contact client à votre répertoire.'}
       >
         <form className="space-y-4" onSubmit={onSubmit}>

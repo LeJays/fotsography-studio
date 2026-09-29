@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, CalendarDays, Download, MapPin, Plus } from 'lucide-react'
+import { ArrowLeft, CalendarDays, Download, Eye, MapPin, Plus } from 'lucide-react'
 import { Link, useParams } from 'react-router-dom'
 import { PAYMENT_TYPE_LABELS } from '../../../shared/consts.ts'
 import { formatDate, todayInputValue } from '../../../shared/dates.ts'
 import { formatAmount } from '../../../shared/money.ts'
 import type { PaymentType, ProjectDetail, ProjectStatus } from '../../../shared/types.ts'
-import { Alert, Badge, Button, Card, Field, Input, Modal, Select, StatCard, TableWrapper, Td, Textarea, Th } from '../../components/ui'
+import { Alert, Badge, Button, Card, Field, Input, Modal, Select, Skeleton, StatCard, StatsSkeleton, TableWrapper, Td, Textarea, Th } from '../../components/ui'
 import { useAuth } from '../../context/AuthContext'
 import { ApiError, createPaymentApi, fetchProject } from '../../lib/api'
-import { downloadReceiptPdf } from '../../lib/receiptPdf'
+import { downloadReceiptPdf, previewReceiptPdf } from '../../lib/receiptPdf'
 
 const labels: Record<ProjectStatus, string> = { DRAFT: 'Brouillon', IN_PROGRESS: 'En cours', DELIVERED: 'Livré', CANCELLED: 'Annulé' }
 const tones: Record<ProjectStatus, 'gold' | 'green' | 'red' | 'gray'> = { DRAFT: 'gray', IN_PROGRESS: 'gold', DELIVERED: 'green', CANCELLED: 'red' }
@@ -81,8 +81,7 @@ export const ProjectDetailPage = () => {
       setIsSaving(false)
     }
   }
-
-  if (loading) return <Card className="p-12 text-center text-sm text-studio-dark/55">Chargement du projet…</Card>
+  if (loading) return <div className="space-y-6" aria-hidden="true"><div className="flex items-center gap-3"><Skeleton className="h-10 w-10 rounded-full" /><div className="space-y-2"><Skeleton className="h-3 w-32" /><Skeleton className="h-6 w-64" /></div></div><StatsSkeleton /><Card className="space-y-3"><Skeleton className="h-5 w-40" /><Skeleton className="h-3 w-full" /><Skeleton className="h-3 w-2/3" /></Card></div>
   if (!project) return <div className="space-y-4"><Alert tone="error">{error || 'Projet introuvable.'}</Alert><Link to="/projets"><Button variant="secondary"><ArrowLeft className="h-4 w-4" />Retour aux projets</Button></Link></div>
 
   return <div className="space-y-6">
@@ -91,14 +90,19 @@ export const ProjectDetailPage = () => {
     {feedback ? <Alert tone="success">{feedback}</Alert> : null}
     {error ? <Alert tone="error">{error}</Alert> : null}
 
-    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{isAdmin ? <StatCard label="Montant total" value={formatAmount(project.totalAmount)} /> : <StatCard label="Client" value={project.clientName} />}{isAdmin ? <StatCard label="Encaissé" value={formatAmount(project.paidAmount)} /> : <StatCard label="Lieu" value={project.eventLocation} />}{isAdmin ? <StatCard label="Reste à percevoir" value={formatAmount(project.remainingAmount)} /> : <StatCard label="Date de l’événement" value={formatDate(project.eventDate)} />}<StatCard label="Livraison globale" value={formatDate(project.globalDeliveryDate)} /></div>
+    <div className="studio-stagger grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      {isAdmin ? <StatCard label="Montant total" value={formatAmount(project.totalAmount)} /> : <StatCard label="Client" value={project.clientName} />}
+      {isAdmin ? <StatCard label="Encaissé" value={formatAmount(project.paidAmount)} /> : <StatCard label="Lieu" value={project.eventLocation} />}
+      {isAdmin ? <StatCard label="Reste à percevoir" value={formatAmount(project.remainingAmount)} /> : <StatCard label="Date de l’événement" value={formatDate(project.eventDate)} />}
+      <StatCard label="Livraison globale" value={formatDate(project.globalDeliveryDate)} />
+    </div>
 
     <Card className="space-y-3 text-sm">{isAdmin ? <p><strong>Plan de paiement :</strong> avance {formatAmount(project.advanceAmount)} · intermédiaire {formatAmount(project.intermediateAmount)} · solde {formatAmount(project.finalAmount)}</p> : null}{project.notes ? <p className="whitespace-pre-line text-studio-dark/70">{project.notes}</p> : null}<Link to="/taches" className="inline-block font-semibold text-studio-terracotta hover:underline">Gérer les activités et tâches</Link></Card>
 
     {isAdmin ? <section className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-serif text-xl font-bold text-studio-dark">Paiements</h2><p className="mt-1 text-sm text-studio-dark/55">Historique des encaissements reçus pour ce projet.</p></div><Button onClick={openPayment} disabled={project.remainingAmount === 0 || project.status === 'CANCELLED'}><Plus className="h-4 w-4" /> Enregistrer un paiement</Button></div>
-      {project.payments.length === 0 ? <Card className="text-sm text-studio-dark/55">Aucun paiement enregistré.</Card> : <TableWrapper><thead><tr><Th>Jalon</Th><Th>Date</Th><Th>Moyen</Th><Th>Référence</Th><Th>Montant</Th><Th>Reçu</Th></tr></thead><tbody>{project.payments.map((payment) => { const receipt = paymentReceipt(payment.id); return <tr key={payment.id}><Td><Badge tone={payment.type === 'FINAL_20' ? 'green' : payment.type === 'CUSTOM' ? 'gray' : 'gold'}>{PAYMENT_TYPE_LABELS[payment.type]}</Badge></Td><Td>{formatDate(payment.paymentDate)}</Td><Td>{methodLabels[payment.method]}</Td><Td>{payment.reference || '—'}</Td><Td><strong>{formatAmount(payment.amount)}</strong></Td><Td>{receipt ? <Button size="sm" variant="secondary" onClick={() => void downloadReceiptPdf(project, receipt, payment)}><Download className="h-3.5 w-3.5" /> PDF</Button> : <span className="text-xs text-studio-dark/45">Indisponible</span>}</Td></tr> })}</tbody></TableWrapper>}
-      {finalReceipt ? <Card className="mt-4 flex flex-wrap items-center justify-between gap-3 border-studio-gold/40 bg-studio-gold/10"><div><h3 className="font-semibold text-studio-dark">Facture finale disponible</h3><p className="text-sm text-studio-dark/60">Le projet est entièrement réglé.</p></div><Button variant="secondary" onClick={() => void downloadReceiptPdf(project, finalReceipt)}><Download className="h-4 w-4" /> Télécharger la facture finale</Button></Card> : null}
+      {project.payments.length === 0 ? <Card className="text-sm text-studio-dark/55">Aucun paiement enregistré.</Card> : <TableWrapper><thead><tr><Th>Jalon</Th><Th>Date</Th><Th>Moyen</Th><Th>Référence</Th><Th>Montant</Th><Th>Reçu</Th></tr></thead><tbody>{project.payments.map((payment) => { const receipt = paymentReceipt(payment.id); return <tr key={payment.id}><Td><Badge tone={payment.type === 'FINAL_20' ? 'green' : payment.type === 'CUSTOM' ? 'gray' : 'gold'}>{PAYMENT_TYPE_LABELS[payment.type]}</Badge></Td><Td>{formatDate(payment.paymentDate)}</Td><Td>{methodLabels[payment.method]}</Td><Td>{payment.reference || '—'}</Td><Td><strong>{formatAmount(payment.amount)}</strong></Td><Td>{receipt ? <div className="flex items-center gap-1"><Button size="sm" variant="ghost" title="Voir le reçu" onClick={() => void previewReceiptPdf(project, receipt, payment)}><Eye className="h-3.5 w-3.5" /></Button><Button size="sm" variant="secondary" onClick={() => void downloadReceiptPdf(project, receipt, payment)}><Download className="h-3.5 w-3.5" /> PDF</Button></div> : <span className="text-xs text-studio-dark/45">Indisponible</span>}</Td></tr> })}</tbody></TableWrapper>}
+      {finalReceipt ? <Card className="mt-4 flex flex-wrap items-center justify-between gap-3 border-studio-gold/40 bg-studio-gold/10"><div><h3 className="font-semibold text-studio-dark">Facture finale disponible</h3><p className="text-sm text-studio-dark/60">Le projet est entièrement réglé.</p></div><div className="flex flex-wrap items-center gap-2"><Button variant="secondary" onClick={() => void previewReceiptPdf(project, finalReceipt)}><Eye className="h-4 w-4" /> Voir la facture</Button><Button variant="secondary" onClick={() => void downloadReceiptPdf(project, finalReceipt)}><Download className="h-4 w-4" /> Télécharger la facture finale</Button></div></Card> : null}
     </section> : null}
 
     <Modal open={isAdmin && isPaymentOpen} onClose={() => !isSaving && setIsPaymentOpen(false)} title="Enregistrer un paiement" subtitle="Les jalons 30 %, 50 % et 20 % reprennent automatiquement leur montant prévu.">

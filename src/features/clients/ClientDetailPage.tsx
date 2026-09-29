@@ -26,7 +26,9 @@ import {
   Field,
   Input,
   Modal,
+  Skeleton,
   StatCard,
+  StatsSkeleton,
   TableWrapper,
   Td,
   Textarea,
@@ -86,7 +88,6 @@ export const ClientDetailPage = () => {
     void loadClient();
   }, [loadClient]);
 
-
   const openEditModal = () => {
     if (!client) return;
     setEditError('');
@@ -127,7 +128,23 @@ export const ClientDetailPage = () => {
   };
 
   if (isLoading) {
-    return <Card className="p-12 text-center text-sm text-studio-dark/55">Chargement de la fiche client⬦</Card>;
+    return (
+      <div className="space-y-6" aria-hidden="true">
+        <div className="flex items-center gap-3">
+          <Skeleton className="h-10 w-10 rounded-full" />
+          <div className="space-y-2">
+            <Skeleton className="h-6 w-56" />
+            <Skeleton className="h-3 w-40" />
+          </div>
+        </div>
+        <StatsSkeleton />
+        <Card className="space-y-3">
+          <Skeleton className="h-5 w-40" />
+          <Skeleton className="h-3 w-full" />
+          <Skeleton className="h-3 w-2/3" />
+        </Card>
+      </div>
+    );
   }
 
   if (error || !client) {
@@ -164,13 +181,12 @@ export const ClientDetailPage = () => {
 
       {feedback ? <Alert tone="success">{feedback}</Alert> : null}
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="studio-stagger grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard label="Projets" value={client.projectCount.toString()} hint="Projets actifs" />
         <StatCard label="Total facturé" value={formatAmount(client.totalAmount)} hint="Montant contractualisé" />
         <StatCard label="Encaissé" value={formatAmount(client.paidAmount)} hint="Paiements reçus" />
         <StatCard label="Reste à percevoir" value={formatAmount(client.remainingAmount)} hint="Solde du compte" />
       </div>
-
 
       <div className="grid gap-6 lg:grid-cols-3">
         <Card className="space-y-4 lg:col-span-1">
@@ -242,7 +258,7 @@ export const ClientDetailPage = () => {
       <Modal
         open={isEditOpen}
         onClose={() => setIsEditOpen(false)}
-        title="Modifier le client"
+        size="lg" title="Modifier le client"
         subtitle={`Mettez à jour les coordonnées de ${client.name}.`}
       >
         <form className="space-y-4" onSubmit={onSave}>

@@ -3,16 +3,16 @@ import { Lock, LogIn, Sparkles, UserPlus } from 'lucide-react';
 import { Navigate } from 'react-router-dom';
 import logoPicto from '../assets/Logo Fotsography Studio_LOGO FOTSOGRAPHY STUDIO COLOR PICTO.jpg';
 import type { RegisterPayload } from '../../shared/types.ts';
-import { LoadingScreen } from '../components/ui';
+import { Alert, LoadingScreen } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 import { ApiError, fetchSetupStatus } from '../lib/api';
 
 /* Styles partagés par les deux panneaux (couleurs du studio uniquement) */
-const LABEL_CLASS = 'mb-1.5 block text-xs font-semibold text-studio-dark/80';
+const LABEL_CLASS = 'mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-studio-dark/60';
 const INPUT_CLASS =
-  'w-full rounded-lg border border-studio-dark/15 bg-white px-3.5 py-2.5 text-sm text-studio-dark placeholder:text-studio-dark/35 transition focus:border-studio-gold focus:outline-none focus:ring-2 focus:ring-studio-gold/25';
+  'w-full rounded-studio border border-studio-dark/10 bg-white px-3.5 py-2.5 text-sm text-studio-dark shadow-studio-xs transition placeholder:text-studio-dark/35 hover:border-studio-dark/20 focus:border-studio-gold focus:outline-none focus:ring-4 focus:ring-studio-gold/20';
 const PRIMARY_BUTTON_CLASS =
-  'flex w-full items-center justify-center gap-2 rounded-lg bg-studio-dark px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-studio-dark/20 transition hover:bg-studio-dark/90 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60';
+  'flex w-full items-center justify-center gap-2 rounded-studio bg-gradient-to-br from-studio-dark via-studio-dark to-studio-terracotta px-4 py-3 text-sm font-semibold text-white shadow-studio-card transition hover:shadow-studio-halo hover:brightness-110 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60 disabled:shadow-none';
 const NOTE_CLASS =
   'mt-5 flex items-start justify-center gap-2 text-center text-xs text-studio-dark/50';
 
@@ -141,9 +141,9 @@ export const AuthPage: React.FC = () => {
       <div className="pointer-events-none absolute -left-40 -top-40 h-[30rem] w-[30rem] rounded-full bg-studio-terracotta/35 blur-[130px]" />
       <div className="pointer-events-none absolute -bottom-48 -right-32 h-[32rem] w-[32rem] rounded-full bg-studio-gold/10 blur-[150px]" />
 
-      <div className="relative z-10 grid w-full max-w-4xl overflow-hidden rounded-3xl bg-white shadow-2xl shadow-black/40 ring-1 ring-black/20 lg:grid-cols-2">
+      <div className="studio-pop relative z-10 grid w-full max-w-4xl overflow-hidden rounded-studio-lg bg-white shadow-studio-lift ring-1 ring-black/20 lg:grid-cols-2">
         {/* ------------------ Panneau identité (écrans larges) ------------------ */}
-        <div className="relative hidden flex-col justify-between overflow-hidden bg-studio-dark px-10 py-12 lg:flex">
+        <div className="studio-grain relative hidden flex-col justify-between overflow-hidden bg-studio-dark px-10 py-12 lg:flex">
           <div className="pointer-events-none absolute -right-20 -top-24 h-64 w-64 rounded-full bg-studio-terracotta/45 blur-3xl" />
           <div className="pointer-events-none absolute -left-24 bottom-8 h-52 w-52 rounded-full bg-studio-gold/10 blur-3xl" />
 
@@ -159,6 +159,7 @@ export const AuthPage: React.FC = () => {
             <h1 className="font-serif text-3xl font-bold leading-tight text-white">
               Fotsography <span className="text-studio-gold">Studio</span>
             </h1>
+            <span className="studio-accent-rule mt-4 block h-1 w-14 rounded-full" aria-hidden="true" />
             <p className="mt-4 text-sm leading-relaxed text-white/65">
               L'espace de gestion de votre studio photo : projets, paiements 30/50/20, équipe et
               livrables — au même endroit.
@@ -192,11 +193,11 @@ export const AuthPage: React.FC = () => {
             </div>
           </div>
 
-          {error && (
-            <div className="mb-5 rounded-lg border border-red-200 bg-red-50 px-3.5 py-2.5 text-xs font-medium text-red-600">
+          {error ? (
+            <Alert tone="error" className="mb-5">
               {error}
-            </div>
-          )}
+            </Alert>
+          ) : null}
 
           {/* ------------------ Mode connexion ------------------ */}
           {mode === 'login' && (

@@ -219,6 +219,8 @@ model Task {
   assignedUserId         String
   assignedUser           User       @relation(fields: [assignedUserId], references: [id])
   name                   String
+  /** Instructions détaillées visibles par le membre assigné. */
+  description            String?
   clientPriceShare       Int?
   memberPayout           Int?
   payoutPaidAt           DateTime?

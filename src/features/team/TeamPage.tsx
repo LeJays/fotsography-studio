@@ -16,7 +16,9 @@ import {
   Input,
   Modal,
   PageHeader,
+  SearchInput,
   Select,
+  Skeleton,
   TableWrapper,
   Td,
   Th,
@@ -31,6 +33,8 @@ export const TeamPage: React.FC = () => {
   const [formError, setFormError] = useState('');
   const [feedback, setFeedback] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  /** Filtre d'affichage sur le nom, l'email ou le rôle. */
+  const [search, setSearch] = useState('');
 
   const {
     register,
@@ -53,29 +57,11 @@ export const TeamPage: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
-
-    fetchUsers()
-      .then(({ users: loaded }) => {
-        if (!cancelled) setUsers(loaded);
-      })
-      .catch((error) => {
-        if (!cancelled) {
-          setListError(error instanceof ApiError ? error.message : 'Chargement impossible.');
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setIsLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    void load();
+  }, [load]);
 
   const onSubmit = handleSubmit(async (values) => {
     setFormError('');
-
     try {
       await createUserApi(values);
       setIsModalOpen(false);
@@ -130,6 +116,15 @@ export const TeamPage: React.FC = () => {
     }
   };
 
+  const needle = search.trim().toLowerCase();
+  const visibleUsers = needle
+    ? users.filter((user) =>
+        [user.name, user.email ?? '', ROLE_LABELS[user.role] ?? user.role].some((field) =>
+          field.toLowerCase().includes(needle),
+        ),
+      )
+    : users;
+
   return (
     <div>
       <PageHeader
@@ -154,15 +149,44 @@ export const TeamPage: React.FC = () => {
         </Alert>
       ) : null}
 
+      {users.length > 0 ? (
+        <div className="mb-4 max-w-sm">
+          <label htmlFor="team-search" className="sr-only">
+            Rechercher un membre
+          </label>
+          <SearchInput
+            id="team-search"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Rechercher un membre…"
+          />
+        </div>
+      ) : null}
+
       <Card>
         {isLoading ? (
-          <p className="py-8 text-center text-sm text-studio-dark/50">Chargement de l'équipe…</p>
+          <div className="space-y-4" aria-hidden="true">
+            {[0, 1, 2, 3].map((index) => (
+              <div key={index} className="flex items-center gap-4">
+                <Skeleton className="h-8 w-8 shrink-0 rounded-full" />
+                <Skeleton className="h-4 flex-1" />
+                <Skeleton className="hidden h-4 w-24 sm:block" />
+                <Skeleton className="hidden h-4 w-16 sm:block" />
+              </div>
+            ))}
+          </div>
         ) : users.length === 0 ? (
           <EmptyState
             icon={<UserCog className="h-5 w-5" />}
             title="Aucun membre"
             description="Créez le premier compte de l'équipe pour commencer à distribuer les tâches."
             action={<Button onClick={() => setIsModalOpen(true)}>Créer un membre</Button>}
+          />
+        ) : visibleUsers.length === 0 ? (
+          <EmptyState
+            icon={<UserCog className="h-5 w-5" />}
+            title="Aucun résultat"
+            description="Aucun membre ne correspond à votre recherche."
           />
         ) : (
           <TableWrapper>
@@ -177,7 +201,7 @@ export const TeamPage: React.FC = () => {
               </tr>
             </thead>
             <tbody>
-              {users.map((user) => (
+              {visibleUsers.map((user) => (
                 <tr key={user.id}>
                   <Td>
                     <span className="font-semibold text-studio-dark">{user.name}</span>
@@ -243,7 +267,7 @@ export const TeamPage: React.FC = () => {
 
       <Modal
         open={isModalOpen}
-        title="Nouveau membre"
+        size="lg" title="Nouveau membre"
         subtitle="Le membre se connecte avec cet email et définit son mot de passe à la première connexion."
         onClose={() => {
           setIsModalOpen(false);

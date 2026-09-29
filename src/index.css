@@ -9,10 +9,26 @@
   /* Déclinaisons de la même palette (fonds, survols, dégradés). */
   --color-studio-ink: #2B181D;
   --color-studio-cream: #F6EFE4;
+  --color-studio-gold-soft: #FBE2A4;
+
+  /* Typographie : Plus Jakarta Sans (interface) + Fraunces (titres éditoriaux).
+     Les replis système garantissent un rendu correct si les polices web ne chargent pas. */
+  --font-sans: 'Plus Jakarta Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-serif: 'Fraunces', ui-serif, Georgia, 'Times New Roman', serif;
+
+  /* Silhouette homogène : deux rayons seulement pour toute l'application. */
+  --radius-studio: 1rem;
+  --radius-studio-lg: 1.5rem;
+
+  /* Courbe d'animation partagée par toutes les transitions. */
+  --ease-studio: cubic-bezier(0.22, 1, 0.36, 1);
 
   /* Ombres douces teintées studio (remplace les ombres grises par défaut). */
+  --shadow-studio-xs: 0 1px 2px rgb(61 35 41 / 0.06);
   --shadow-studio-card: 0 1px 2px rgb(61 35 41 / 0.05), 0 14px 34px -22px rgb(61 35 41 / 0.35);
-  --shadow-studio-lift: 0 2px 6px rgb(61 35 41 / 0.07), 0 24px 48px -26px rgb(61 35 41 / 0.5);
+  --shadow-studio-lift: 0 2px 6px rgb(61 35 41 / 0.07), 0 26px 50px -28px rgb(61 35 41 / 0.5);
+  --shadow-studio-halo: 0 18px 40px -26px rgb(158 75 41 / 0.55);
+  --shadow-studio-inset: inset 0 1px 0 rgb(255 255 255 / 0.65);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -27,8 +43,26 @@
   body {
     background-color: var(--color-studio-bg-light);
     color: var(--color-studio-dark);
+    font-family: var(--font-sans);
+    font-feature-settings: 'cv11', 'ss01';
     -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
+  }
+
+  /* Les titres passent automatiquement sur la display Fraunces. */
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-serif);
+    font-optical-sizing: auto;
+  }
+
+  /* Anneau de focus par défaut, neutralisable par les classes des composants
+     (`:where` = spécificité nulle, donc toujours surchargeable). */
+  :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+    outline: 2px solid rgb(245 184 19 / 0.75);
+    outline-offset: 2px;
   }
 
   ::selection {
@@ -42,13 +76,16 @@
 /* -------------------------------------------------------------------------- */
 
 @layer components {
-  /* Fond ambiant de l'espace connecté : deux halos très légers aux couleurs studio. */
+  /* Fond ambiant de l'espace connecté : deux halos studio + une trame très fine. */
   .studio-ambient {
     background-color: var(--color-studio-bg-light);
     background-image:
       radial-gradient(58rem 30rem at 6% -12%, rgb(245 184 19 / 0.13), transparent 60%),
-      radial-gradient(46rem 26rem at 104% 0%, rgb(158 75 41 / 0.09), transparent 62%);
-    background-repeat: no-repeat;
+      radial-gradient(46rem 26rem at 104% 0%, rgb(158 75 41 / 0.09), transparent 62%),
+      linear-gradient(to right, rgb(61 35 41 / 0.035) 1px, transparent 1px),
+      linear-gradient(to bottom, rgb(61 35 41 / 0.035) 1px, transparent 1px);
+    background-size: 100% 100%, 100% 100%, 56px 56px, 56px 56px;
+    background-repeat: no-repeat, no-repeat, repeat, repeat;
   }
 
   /* Panneaux sombres (barre latérale, chargement, page 404). */
@@ -69,6 +106,75 @@
     background-image: linear-gradient(135deg, rgb(245 184 19 / 0.3) 0%, rgb(158 75 41 / 0.16) 100%);
   }
 
+  /* Surfaces en verre dépoli (en-tête collant, overlays, cartes flottantes). */
+  .studio-glass {
+    background-color: rgb(255 255 255 / 0.72);
+    -webkit-backdrop-filter: blur(16px) saturate(150%);
+    backdrop-filter: blur(16px) saturate(150%);
+  }
+
+  /* Élévation au survol : cartes et liens cliquables. */
+  .studio-card-hover {
+    transition:
+      transform 0.25s var(--ease-studio),
+      box-shadow 0.25s var(--ease-studio),
+      border-color 0.25s var(--ease-studio);
+  }
+
+  .studio-card-hover:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-studio-lift);
+  }
+
+  /* Chiffres alignés : montants, compteurs, colonnes numériques. */
+  .studio-tabular {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum';
+  }
+
+  /* Remplissage dégradé des barres d'avancement. */
+  .studio-track {
+    background-image: linear-gradient(90deg, var(--color-studio-gold) 0%, var(--color-studio-terracotta) 100%);
+  }
+
+  /* Apparition en cascade des enfants directs (listes de cartes, statistiques). */
+  .studio-stagger > * {
+    animation: studio-rise 0.45s var(--ease-studio) both;
+  }
+
+  .studio-stagger > *:nth-child(1) { animation-delay: 0.03s; }
+  .studio-stagger > *:nth-child(2) { animation-delay: 0.06s; }
+  .studio-stagger > *:nth-child(3) { animation-delay: 0.09s; }
+  .studio-stagger > *:nth-child(4) { animation-delay: 0.12s; }
+  .studio-stagger > *:nth-child(5) { animation-delay: 0.15s; }
+  .studio-stagger > *:nth-child(6) { animation-delay: 0.18s; }
+  .studio-stagger > *:nth-child(7) { animation-delay: 0.21s; }
+  .studio-stagger > *:nth-child(n + 8) { animation-delay: 0.24s; }
+
+  /* Grain photographique discret (panneaux sombres, écran de connexion). */
+  .studio-grain {
+    position: relative;
+  }
+
+  .studio-grain::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.4;
+    mix-blend-mode: soft-light;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.55'/%3E%3C/svg%3E");
+  }
+
+  /* Bandeau défilable sans barre visible (navigation mobile). */
+  .studio-scroll-hidden {
+    scrollbar-width: none;
+  }
+
+  .studio-scroll-hidden::-webkit-scrollbar {
+    display: none;
+  }
+
   /* Chevron des <select> : conserve une flèche lisible malgré `appearance-none`. */
   .studio-select {
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%233D2329' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
@@ -77,9 +183,17 @@
     background-size: 1rem 1rem;
   }
 
-  /* Tableaux : zébrage discret et survol doré. */
+  /* Tableaux : en-tête collant, zébrage discret et survol doré. */
+  .studio-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+  }
+
   .studio-table tbody tr {
-    transition: background-color 0.15s ease;
+    transition: background-color 0.18s var(--ease-studio);
   }
 
   .studio-table tbody tr:nth-child(even) {
@@ -92,7 +206,24 @@
 
   /* Apparition douce des contenus de page. */
   .studio-rise {
-    animation: studio-rise 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+    animation: studio-rise 0.4s var(--ease-studio) both;
+  }
+
+  /* Modales, palette de recherche et tiroir : léger décalage + mise à l'échelle. */
+  .studio-pop {
+    animation: studio-pop 0.25s var(--ease-studio) both;
+  }
+
+  /* Squelettes de chargement (texte et blocs). */
+  .studio-skeleton {
+    background-image: linear-gradient(
+      90deg,
+      rgb(61 35 41 / 0.05) 0%,
+      rgb(61 35 41 / 0.1) 38%,
+      rgb(61 35 41 / 0.05) 72%
+    );
+    background-size: 220% 100%;
+    animation: studio-shimmer 1.4s var(--ease-studio) infinite;
   }
 
   /* Barre de défilement discrète. */
@@ -131,5 +262,42 @@
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes studio-shimmer {
+  from {
+    background-position: 120% 0;
+  }
+
+  to {
+    background-position: -120% 0;
+  }
+}
+
+@keyframes studio-pop {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.985);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Accessibilité : neutralise les animations décoratives si l'utilisateur le demande. */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
   }
 }

@@ -8,6 +8,7 @@ import {
   Badge,
   Button,
   Card,
+  CardGridSkeleton,
   EmptyState,
   Field,
   Input,
@@ -149,7 +150,7 @@ export const ActivitiesPage = () => {
       ) : null}
 
       {isLoading ? (
-        <Card className="p-12 text-center text-sm text-studio-dark/55">Chargement des activités…</Card>
+        <CardGridSkeleton />
       ) : activities.length === 0 ? (
         <EmptyState
           icon={<FolderKanban className="h-6 w-6" />}
@@ -158,7 +159,7 @@ export const ActivitiesPage = () => {
           action={isAdmin ? <Button onClick={openCreateModal} disabled={projects.length === 0}><Plus className="h-4 w-4" />Créer une activité</Button> : undefined}
         />
       ) : (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <div className="studio-stagger grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {activities.map((activity) => {
             const activityTaskCount = taskCounts.get(activity.id) ?? 0
             return (
@@ -219,7 +220,7 @@ export const ActivitiesPage = () => {
       <Modal
         open={isModalOpen}
         onClose={closeModal}
-        title={selectedActivity ? 'Modifier l’activité' : 'Nouvelle activité'}
+        size="lg" title={selectedActivity ? 'Modifier l’activité' : 'Nouvelle activité'}
         subtitle={selectedActivity ? 'Mettez à jour le nom et la description.' : 'Rattachez une nouvelle activité à un projet.'}
       >
         <form className="space-y-4" action={(form) => void saveActivity(form)}>

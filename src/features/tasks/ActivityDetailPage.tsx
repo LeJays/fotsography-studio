@@ -17,6 +17,7 @@ import {
   Select,
   TableWrapper,
   Td,
+  Textarea,
   Th,
 } from '../../components/ui'
 import { useAuth } from '../../context/AuthContext'
@@ -189,9 +190,11 @@ export const ActivityDetailPage = () => {
     setError('')
     try {
       const assigneeIsAdmin = users.find((user) => user.id === assignedUserId)?.role === 'ADMIN'
+      const description = String(form.get('description') ?? '').trim()
       const payload = {
         assignedUserId,
         name,
+        description,
         ...(isAdmin ? { clientPriceShare: amountFromForm(form, 'clientPriceShare') } : {}),
         // Une tâche assignée à l'admin ne porte aucune rémunération membre.
         ...(isAdmin && !assigneeIsAdmin ? { memberPayout: amountFromForm(form, 'memberPayout') } : {}),
@@ -347,6 +350,9 @@ export const ActivityDetailPage = () => {
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-wide text-studio-terracotta">{task.projectName}</p>
                     <h3 className="mt-1 font-serif text-lg font-bold text-studio-dark transition group-hover:text-studio-terracotta">{task.name}</h3>
+                    {task.description ? (
+                      <p className="mt-1.5 line-clamp-2 text-xs leading-relaxed text-studio-dark/60">{task.description}</p>
+                    ) : null}
                   </div>
                   <Badge tone={taskStatusTones[task.status]}>
                     {task.status === 'COMPLETED' ? <CheckCircle2 className="h-3 w-3" /> : null}
@@ -428,7 +434,7 @@ export const ActivityDetailPage = () => {
       <Modal
         open={isTaskModalOpen}
         onClose={closeTaskModal}
-        title={editingTask ? 'Modifier la tâche' : 'Distribuer une tâche'}
+        size="lg" title={editingTask ? 'Modifier la tâche' : 'Distribuer une tâche'}
         subtitle="La date de livraison est calculée automatiquement à J‑5 de la livraison globale du projet."
       >
         <form key={editingTask?.id ?? 'new-task'} className="space-y-4" action={(form) => void saveTask(form)}>
@@ -440,6 +446,9 @@ export const ActivityDetailPage = () => {
           </Field>
           <Field label="Nom de la tâche *">
             <Input name="name" defaultValue={editingTask?.name ?? ''} required autoFocus placeholder="Ex. Retouche de la galerie" />
+          </Field>
+          <Field label="Description" hint="Visible par le membre assigné — décrivez exactement ce qu'il doit faire.">
+            <Textarea name="description" defaultValue={editingTask?.description ?? ''} rows={3} placeholder="Ex. Retoucher les 80 photos du shooting Jour J : balance des blancs, cadrage, étalonnage. Exporter en JPEG 2400px." />
           </Field>
           {isAdmin ? (
             <>
@@ -470,7 +479,7 @@ export const ActivityDetailPage = () => {
       <Modal
         open={isActivityModalOpen}
         onClose={() => !isSaving && setIsActivityModalOpen(false)}
-        title="Modifier l’activité"
+        size="lg" title="Modifier l’activité"
         subtitle="Mettez à jour les informations affichées sur cette fiche."
       >
         <form className="space-y-4" action={(form) => void saveActivity(form)}>

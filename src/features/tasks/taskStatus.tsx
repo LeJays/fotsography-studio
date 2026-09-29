@@ -29,9 +29,9 @@ export const lastReview = (task: TaskSummary) => task.reviews?.[0]
 export const StatusPill = ({ task, onCycle }: { task: TaskSummary; onCycle?: (task: TaskSummary) => void }) => {
   const review = lastReview(task)
   if (review?.decision === 'APPROVED' && task.status === 'COMPLETED') {
-    return <Badge tone="green">Validée</Badge>
+    return <Badge tone="green" dot>Validée</Badge>
   }
-  if (!onCycle) return <Badge tone={STATUS_TONES[task.status]}>{STATUS_LABELS[task.status]}</Badge>
+  if (!onCycle) return <Badge tone={STATUS_TONES[task.status]} dot>{STATUS_LABELS[task.status]}</Badge>
   return (
     <button
       type="button"
@@ -43,7 +43,7 @@ export const StatusPill = ({ task, onCycle }: { task: TaskSummary; onCycle?: (ta
       }}
       className="rounded-full outline-none transition hover:scale-105 focus-visible:ring-2 focus-visible:ring-studio-gold/50"
     >
-      <Badge tone={STATUS_TONES[task.status]}>{STATUS_LABELS[task.status]} →</Badge>
+      <Badge tone={STATUS_TONES[task.status]} dot>{STATUS_LABELS[task.status]} →</Badge>
     </button>
   )
 }

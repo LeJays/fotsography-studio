@@ -56,13 +56,13 @@ const getProject = async (ctx: RouteContext): Promise<void> => {
   })
   const project = await prisma.project.findFirst({
     where: { id: ctx.params.id, archivedAt: null },
-    include: { client: { select: { name: true } }, payments: { where: { archivedAt: null }, include: { receivedBy: { select: { name: true } } }, orderBy: { paymentDate: 'desc' } }, receipts: { orderBy: { issuedAt: 'desc' } }, activities: { where: { archivedAt: null }, include: { expenses: { where: { archivedAt: null }, orderBy: { expenseDate: 'asc' } } } } },
+    include: { client: { select: { name: true, phone: true, email: true } }, payments: { where: { archivedAt: null }, include: { receivedBy: { select: { name: true } } }, orderBy: { paymentDate: 'desc' } }, receipts: { orderBy: { issuedAt: 'desc' } }, activities: { where: { archivedAt: null }, include: { expenses: { where: { archivedAt: null }, orderBy: { expenseDate: 'asc' } } } } },
   })
   if (!project) throw new HttpError(404, 'Projet introuvable.')
   const isAdmin = ctx.actor?.role === 'ADMIN'
   const summary = toProjectSummary(project, isAdmin)
   // Paiements, reçus et dépenses restent réservés à l'admin.
-  const detail: ProjectDetail = { ...summary, notes: project.notes, payments: isAdmin ? project.payments.map(toPayment) : [], receipts: isAdmin ? project.receipts.map(toReceipt) : [], expenses: isAdmin ? project.activities.flatMap((activity) => activity.expenses.map((expense) => ({ id: expense.id, activityName: activity.name, description: expense.description, supplier: expense.supplier, amount: expense.amount, expenseDate: expense.expenseDate.toISOString() }))) : [] }
+  const detail: ProjectDetail = { ...summary, notes: project.notes, clientPhone: project.client.phone ?? null, clientEmail: project.client.email ?? null, payments: isAdmin ? project.payments.map(toPayment) : [], receipts: isAdmin ? project.receipts.map(toReceipt) : [], expenses: isAdmin ? project.activities.flatMap((activity) => activity.expenses.map((expense) => ({ id: expense.id, activityName: activity.name, description: expense.description, supplier: expense.supplier, amount: expense.amount, expenseDate: expense.expenseDate.toISOString() }))) : [] }
   sendJson(ctx.res, 200, { project: detail })
 }
 
