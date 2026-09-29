@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { ArrowLeft, CalendarDays, CheckCircle2, ClipboardList, Pencil, Plus, Trash2, UserRound } from 'lucide-react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { formatDate, toDateInputValue, todayInputValue } from '../../../shared/dates.ts'
+import { computeTaskDeliveryDate, formatDate, toDateInputValue, todayInputValue } from '../../../shared/dates.ts'
 import { formatAmount } from '../../../shared/money.ts'
 import type { ActivitySummary, AssignableUser, ExpenseSummary, TaskSummary } from '../../../shared/types.ts'
 import {
@@ -190,10 +190,12 @@ export const ActivityDetailPage = () => {
     try {
       const assigneeIsAdmin = users.find((user) => user.id === assignedUserId)?.role === 'ADMIN'
       const description = String(form.get('description') ?? '').trim()
+      const deliveryDate = String(form.get('deliveryDate') ?? '').trim()
       const payload = {
         assignedUserId,
         name,
         description,
+        deliveryDate: deliveryDate || undefined,
         ...(isAdmin ? { clientPriceShare: amountFromForm(form, 'clientPriceShare') } : {}),
         // Une tâche assignée à l'admin ne porte aucune rémunération membre.
         ...(isAdmin && !assigneeIsAdmin ? { memberPayout: amountFromForm(form, 'memberPayout') } : {}),
@@ -458,6 +460,23 @@ export const ActivityDetailPage = () => {
           </Field>
           <Field label="Nom de la tâche *">
             <Input name="name" defaultValue={editingTask?.name ?? ''} required autoFocus placeholder="Ex. Retouche de la galerie" />
+          </Field>
+          <Field
+            label="Date de livraison de la tâche *"
+            hint="Calculée automatiquement à J‑5 de la livraison du projet. Vous pouvez la modifier manuellement si besoin."
+          >
+            <Input
+              name="deliveryDate"
+              type="date"
+              defaultValue={
+                editingTask
+                  ? toDateInputValue(editingTask.deliveryDate)
+                  : activity?.projectGlobalDeliveryDate
+                    ? toDateInputValue(computeTaskDeliveryDate(activity.projectGlobalDeliveryDate))
+                    : todayInputValue()
+              }
+              required
+            />
           </Field>
           <Field label="Description" hint="Visible par le membre assigné — décrivez exactement ce qu'il doit faire.">
             <Textarea name="description" defaultValue={editingTask?.description ?? ''} rows={3} placeholder="Ex. Retoucher les 80 photos du shooting Jour J : balance des blancs, cadrage, étalonnage. Exporter en JPEG 2400px." />

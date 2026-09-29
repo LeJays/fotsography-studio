@@ -254,6 +254,7 @@ export interface ActivitySummary {
   id: string
   projectId: string
   projectName: string
+  projectGlobalDeliveryDate?: string
   name: string
   description: string | null
   expenseCount: number
@@ -330,7 +331,7 @@ export interface ReviewTaskPayload {
 }
 
 export interface CreateActivityPayload { projectId: string; name: string; description?: string }
-export interface CreateTaskPayload { activityId: string; assignedUserId: string; name: string; description?: string; clientPriceShare?: number; memberPayout?: number }
+export interface CreateTaskPayload { activityId: string; assignedUserId: string; name: string; description?: string; deliveryDate?: string; clientPriceShare?: number; memberPayout?: number }
 export interface CreateExpensePayload { activityId: string; description: string; supplier?: string; amount: number; expenseDate: string }
 export interface UpdateExpensePayload { description?: string; supplier?: string; amount?: number; expenseDate?: string }
 

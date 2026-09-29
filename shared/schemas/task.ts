@@ -5,6 +5,7 @@ export const createTaskSchema = z.object({
   assignedUserId: z.string().uuid('Membre invalide.'),
   name: z.string().trim().min(2, 'Le nom de la tâche est requis.').max(160),
   description: z.string().trim().max(2000).optional(),
+  deliveryDate: z.string().trim().optional(),
   clientPriceShare: z.coerce.number().int().min(0).optional(),
   memberPayout: z.coerce.number().int().min(0).optional(),
 })

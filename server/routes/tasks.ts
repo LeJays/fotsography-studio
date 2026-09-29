@@ -1,5 +1,5 @@
 import { createTaskSchema, payoutTaskSchema, reviewTaskSchema, updateOwnTaskSchema, updateTaskSchema } from '../../shared/schemas/task.ts'
-import { computeTaskDeliveryDate } from '../../shared/dates.ts'
+import { computeTaskDeliveryDate, fromDateInputValue } from '../../shared/dates.ts'
 import { formatAmount } from '../../shared/money.ts'
 import type { CreateTaskPayload, TaskSummary } from '../../shared/types.ts'
 import { prisma } from '../db.ts'
@@ -77,7 +77,24 @@ const createTask = async (ctx: RouteContext): Promise<void> => {
   if (!member) throw new HttpError(404, 'Membre introuvable ou inactif.')
   // Les montants ne sont fixés que par l'admin : un assistant distribue la tâche sans saisir d'argent.
   // Une tâche assignée à l'admin ne porte aucune rémunération membre : seul le montant client est suivi.
-  const task = await prisma.task.create({ data: { activityId: activity.id, assignedUserId: member.id, name: data.name, description: data.description || null, clientPriceShare: isAdmin ? data.clientPriceShare ?? null : null, memberPayout: isAdmin && member.role !== 'ADMIN' ? data.memberPayout ?? null : null, deliveryDate: computeTaskDeliveryDate(activity.project.globalDeliveryDate) }, include: taskInclude })
+  const defaultDelivery = computeTaskDeliveryDate(activity.project.globalDeliveryDate)
+  const customDelivery = data.deliveryDate ? fromDateInputValue(data.deliveryDate) : null
+  const isOverridden = Boolean(customDelivery && customDelivery.getTime() !== defaultDelivery.getTime())
+  const deliveryDate = customDelivery ?? defaultDelivery
+
+  const task = await prisma.task.create({
+    data: {
+      activityId: activity.id,
+      assignedUserId: member.id,
+      name: data.name,
+      description: data.description || null,
+      clientPriceShare: isAdmin ? data.clientPriceShare ?? null : null,
+      memberPayout: isAdmin && member.role !== 'ADMIN' ? data.memberPayout ?? null : null,
+      deliveryDate,
+      deliveryDateOverridden: isOverridden,
+    },
+    include: taskInclude,
+  })
   await recordAudit({ actorId: ctx.actor?.id, action: 'task.create', entity: 'Task', entityId: task.id, payload: { activityId: task.activityId, assignedUserId: task.assignedUserId } })
   sendJson(ctx.res, 201, { task: toTask(task, { includeMargin: isAdmin, includePayout: payoutVisible(ctx, task.assignedUserId) }) })
 }
@@ -85,13 +102,27 @@ const updateTask = async (ctx: RouteContext): Promise<void> => {
   const isAdmin = isAdminActor(ctx)
   const task = await prisma.task.findFirst({ where: { id: ctx.params.id, archivedAt: null } })
   if (!task) throw new HttpError(404, 'Tâche introuvable.')
-  const data = bodyOf<{ assignedUserId?: string; name?: string; description?: string; clientPriceShare?: number; memberPayout?: number }>(ctx)
+  const data = bodyOf<{ assignedUserId?: string; name?: string; description?: string; deliveryDate?: string; clientPriceShare?: number; memberPayout?: number }>(ctx)
   // Rôle du responsable final (nouveau ou actuel) : l'admin ne perçoit pas de rémunération membre.
   const targetUserId = data.assignedUserId ?? task.assignedUserId
   const member = await prisma.user.findFirst({ where: { id: targetUserId, archivedAt: null, isActive: true, role: { not: 'CLIENT' } } })
   if (data.assignedUserId && !member) throw new HttpError(404, 'Membre introuvable ou inactif.')
+  
+  const customDelivery = data.deliveryDate ? fromDateInputValue(data.deliveryDate) : undefined
+
   // Un assistant peut réassigner ou renommer une tâche, mais ne touche jamais aux montants.
-  const updated = await prisma.task.update({ where: { id: task.id }, data: { assignedUserId: data.assignedUserId ?? undefined, name: data.name ?? undefined, description: data.description === undefined ? undefined : data.description || null, ...(isAdmin ? { clientPriceShare: data.clientPriceShare ?? undefined, memberPayout: member?.role === 'ADMIN' ? null : data.memberPayout ?? undefined } : {}) }, include: taskInclude })
+  const updated = await prisma.task.update({
+    where: { id: task.id },
+    data: {
+      assignedUserId: data.assignedUserId ?? undefined,
+      name: data.name ?? undefined,
+      description: data.description === undefined ? undefined : data.description || null,
+      deliveryDate: customDelivery ?? undefined,
+      deliveryDateOverridden: customDelivery !== undefined ? true : undefined,
+      ...(isAdmin ? { clientPriceShare: data.clientPriceShare ?? undefined, memberPayout: member?.role === 'ADMIN' ? null : data.memberPayout ?? undefined } : {}),
+    },
+    include: taskInclude,
+  })
   await recordAudit({ actorId: ctx.actor?.id, action: 'task.update', entity: 'Task', entityId: updated.id, payload: data })
   sendJson(ctx.res, 200, { task: toTask(updated, { includeMargin: isAdmin, includePayout: payoutVisible(ctx, updated.assignedUserId) }) })
 }
