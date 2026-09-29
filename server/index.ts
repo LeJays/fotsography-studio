@@ -1,6 +1,9 @@
 import 'dotenv/config'
 import { createServer } from 'node:http'
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { createReadStream, existsSync, statSync } from 'node:fs'
+import { extname, join, normalize, sep } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { disconnectDatabase, prisma } from './db.ts'
 import { HttpError, sendJson } from './http.ts'
 import { loadActor } from './middleware/auth.ts'
@@ -18,7 +21,81 @@ import { operationRoutes } from './routes/operations.ts'
 import { settingsRoutes } from './routes/settings.ts'
 
 
-const port = Number(process.env.API_PORT ?? 3001)
+/**
+ * Port d'écoute : les hébergeurs cloud (Render, Fly…) injectent `PORT`,
+ * `API_PORT` reste prioritaire en local, 3001 en dernier recours.
+ */
+const port = Number(process.env.PORT ?? process.env.API_PORT ?? 3001)
+
+/** Dossier du front compilé (`npm run build`), servi hors `/api` en production. */
+const distDir = fileURLToPath(new URL('../dist', import.meta.url))
+
+/** Content-Type minimal pour les assets générés par Vite. */
+const contentTypes: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.mjs': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.map': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.gif': 'image/gif',
+  '.ico': 'image/x-icon',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2',
+  '.ttf': 'font/ttf',
+  '.txt': 'text/plain; charset=utf-8',
+  '.webmanifest': 'application/manifest+json',
+}
+
+/**
+ * Sert le front `dist/` (SPA) : fichier statique s'il existe, sinon repli sur
+ * `index.html` pour que les routes react-router fonctionnent au rafraîchissement.
+ * Seules les requêtes GET/HEAD sont acceptées ; toute requête hors `dist/` (« ../ »)
+ * est rejetée sur le repli.
+ */
+const serveStatic = (req: IncomingMessage, res: ServerResponse, url: URL): void => {
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    sendJson(res, 405, { error: 'Méthode non autorisée pour les fichiers statiques.' })
+    return
+  }
+
+  if (!existsSync(distDir)) {
+    sendJson(res, 404, { error: 'Front non compilé : exécutez `npm run build` (dossier dist/ introuvable).' })
+    return
+  }
+
+  let pathname: string
+  try {
+    pathname = decodeURIComponent(url.pathname)
+  } catch {
+    pathname = '/'
+  }
+
+  const candidate = normalize(join(distDir, pathname))
+  const insideDist = candidate === distDir || candidate.startsWith(distDir + sep)
+  const filePath = insideDist && existsSync(candidate) && statSync(candidate).isFile()
+    ? candidate
+    : join(distDir, 'index.html')
+
+  res.setHeader('Content-Type', contentTypes[extname(filePath).toLowerCase()] ?? 'application/octet-stream')
+  if (filePath.endsWith('.html')) res.setHeader('Cache-Control', 'no-cache')
+
+  if (req.method === 'HEAD') {
+    res.end()
+    return
+  }
+
+  const stream = createReadStream(filePath)
+  stream.on('error', () => {
+    if (!res.writableEnded) sendJson(res, 500, { error: 'Lecture du fichier impossible.' })
+  })
+  stream.pipe(res)
+}
 
 /** GET /api/health — vérifie la connexion Neon. */
 const routes: RouteDefinition[] = [
@@ -62,7 +139,17 @@ const sendError = (res: ServerResponse, error: unknown): void => {
 const server = createServer((req: IncomingMessage, res: ServerResponse) => {
   const url = new URL(req.url ?? '/', `http://${req.headers.host ?? `localhost:${port}`}`)
 
-  void router(req, res, url).catch((error: unknown) => sendError(res, error))
+  // `/api/*` → routeur API ; tout le reste → front compilé (production).
+  if (url.pathname === '/api' || url.pathname.startsWith('/api/')) {
+    void router(req, res, url).catch((error: unknown) => sendError(res, error))
+    return
+  }
+
+  try {
+    serveStatic(req, res, url)
+  } catch (error: unknown) {
+    sendError(res, error)
+  }
 })
 
 server.on('error', (error: NodeJS.ErrnoException) => {

@@ -1,6 +1,11 @@
 # Logs
 logs
 *.log
+
+# Environnement — secrets (DATABASE_URL, JWT…) : ne jamais versionner
+.env
+.env.*
+!.env.example
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*

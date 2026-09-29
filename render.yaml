@@ -1,0 +1,19 @@
+services:
+  # Application unique : le serveur Node sert l'API /api/* ET le front compilé (dist/).
+  - type: web
+    name: fotsography-studio
+    runtime: node
+    plan: free
+    buildCommand: npm ci && npm run build
+    startCommand: npm run start:api
+    healthCheckPath: /api/health
+    envVars:
+      # Copier la chaîne Neon du .env (Sync depuis le dashboard, ou coller la valeur).
+      - key: DATABASE_URL
+        sync: false
+      # Secret de signature des sessions (généré automatiquement au premier déploiement).
+      - key: JWT_SECRET
+        generateValue: true
+      # Cookies de session sécurisés (HTTPS forcé sur Render).
+      - key: COOKIE_SECURE
+        value: "true"
