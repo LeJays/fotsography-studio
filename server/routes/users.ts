@@ -1,7 +1,13 @@
 import type { User } from '@prisma/client'
 import { STAFF_ROLES } from '../../shared/consts.ts'
-import { createUserSchema, updateUserSchema } from '../../shared/schemas/user.ts'
-import type { CreateUserPayload, UserSummary, UpdateUserPayload, AssignableUser } from '../../shared/types.ts'
+import { createUserSchema, resetPasswordSchema, updateUserSchema } from '../../shared/schemas/user.ts'
+import type {
+  AssignableUser,
+  CreateUserPayload,
+  ResetPasswordPayload,
+  UpdateUserPayload,
+  UserSummary,
+} from '../../shared/types.ts'
 import { prisma } from '../db.ts'
 import { HttpError, sendJson, sendNoContent } from '../http.ts'
 import { requireAuth, requireRole } from '../middleware/auth.ts'
@@ -131,6 +137,35 @@ const updateUser = async (ctx: RouteContext): Promise<void> => {
   sendJson(ctx.res, 200, { user: toUserSummary(updated) } satisfies { user: UserSummary })
 }
 
+/**
+ * POST /api/users/:id/reset-password — l'admin définit un nouveau mot de passe
+ * provisoire (le membre devra le changer à sa prochaine connexion).
+ * Le mot de passe n'est jamais journalisé : seule l'email est auditée.
+ */
+const resetPassword = async (ctx: RouteContext): Promise<void> => {
+  const data = bodyOf<ResetPasswordPayload>(ctx)
+  const actor = ctx.actor
+  const user = await loadUser(ctx.params.id)
+
+  const updated = await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      password: hashPassword(data.password),
+      mustChangePassword: true,
+    },
+  })
+
+  await recordAudit({
+    actorId: actor?.id,
+    action: 'user.resetPassword',
+    entity: 'User',
+    entityId: updated.id,
+    payload: { email: updated.email },
+  })
+
+  sendJson(ctx.res, 200, { user: toUserSummary(updated) } satisfies { user: UserSummary })
+}
+
 /** DELETE /api/users/:id — archivage (jamais de suppression physique). */
 const archiveUser = async (ctx: RouteContext): Promise<void> => {
   const actor = ctx.actor
@@ -188,6 +223,13 @@ export const userRoutes: RouteDefinition[] = [
     auth: true,
     middlewares: [requireAuth, requireRole('ADMIN'), validateBody(updateUserSchema)],
     handler: updateUser,
+  },
+  {
+    method: 'POST',
+    path: '/api/users/:id/reset-password',
+    auth: true,
+    middlewares: [requireAuth, requireRole('ADMIN'), validateBody(resetPasswordSchema)],
+    handler: resetPassword,
   },
   {
     method: 'DELETE',

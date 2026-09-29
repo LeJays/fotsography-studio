@@ -18,6 +18,7 @@ import type {
   ExpenseSummary,
   TaskSummary,
   RegisterPayload,
+  ResetPasswordPayload,
   SetupStatus,
   UpdateClientPayload,
   UpdateUserPayload,
@@ -112,6 +113,10 @@ export const updateUserApi = (
   payload: UpdateUserPayload,
 ): Promise<{ user: UserSummary }> => apiPatch<{ user: UserSummary }>(`/api/users/${id}`, payload);
 export const archiveUserApi = (id: string): Promise<void> => apiDelete(`/api/users/${id}`);
+export const resetUserPasswordApi = (
+  id: string,
+  payload: ResetPasswordPayload,
+): Promise<{ user: UserSummary }> => apiPost<{ user: UserSummary }>(`/api/users/${id}/reset-password`, payload);
 
 
 /* ----------------------------------- Clients ------------------------------------ */

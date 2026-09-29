@@ -60,6 +60,11 @@ export interface CreateUserPayload {
   password: string
 }
 
+/** Réinitialisation admin : nouveau mot de passe provisoire. */
+export interface ResetPasswordPayload {
+  password: string
+}
+
 /** Membre proposé pour l'assignation d'une tâche (admin + assistant) — sans coordonnées personnelles. */
 export interface AssignableUser {
   id: string

@@ -29,5 +29,22 @@ export const updateUserSchema = z
     message: 'Aucune modification fournie.',
   })
 
+/** Réinitialisation admin d'un mot de passe — corps accepté par l'API. */
+export const resetPasswordSchema = z.object({
+  password: passwordField,
+})
+
+/** Formulaire de réinitialisation (client) : mot de passe + confirmation. */
+export const resetPasswordFormSchema = z
+  .object({
+    password: passwordField,
+    confirmPassword: z.string().min(1, 'Confirmation requise.'),
+  })
+  .refine((data) => data.password === data.confirmPassword, {
+    message: 'Les mots de passe ne correspondent pas.',
+    path: ['confirmPassword'],
+  })
+
 export type CreateUserInput = z.infer<typeof createUserSchema>
 export type UpdateUserInput = z.infer<typeof updateUserSchema>
+export type ResetPasswordInput = z.infer<typeof resetPasswordFormSchema>

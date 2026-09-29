@@ -4,7 +4,7 @@ import { useForm } from 'react-hook-form';
 import { Plus, UserCog } from 'lucide-react';
 import { ROLE_LABELS, STAFF_ROLES, type StaffRole } from '../../../shared/consts.ts';
 import { formatDateTime } from '../../../shared/dates.ts';
-import { createUserSchema, type CreateUserInput } from '../../../shared/schemas/user.ts';
+import { createUserSchema, resetPasswordFormSchema, type CreateUserInput, type ResetPasswordInput } from '../../../shared/schemas/user.ts';
 import type { UserSummary } from '../../../shared/types.ts';
 import {
   Alert,
@@ -23,7 +23,7 @@ import {
   Td,
   Th,
 } from '../../components/ui';
-import { ApiError, archiveUserApi, createUserApi, fetchUsers, updateUserApi } from '../../lib/api';
+import { ApiError, archiveUserApi, createUserApi, fetchUsers, resetUserPasswordApi, updateUserApi } from '../../lib/api';
 
 /** Gestion de l'équipe : l'administrateur crée les membres et leur attribue un rôle. */
 export const TeamPage: React.FC = () => {
@@ -33,6 +33,10 @@ export const TeamPage: React.FC = () => {
   const [formError, setFormError] = useState('');
   const [feedback, setFeedback] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  /** Modale de réinitialisation du mot de passe d'un membre. */
+  const [isResetOpen, setIsResetOpen] = useState(false);
+  const [resetTarget, setResetTarget] = useState<UserSummary | null>(null);
+  const [resetError, setResetError] = useState('');
   /** Filtre d'affichage sur le nom, l'email ou le rôle. */
   const [search, setSearch] = useState('');
 
@@ -42,6 +46,14 @@ export const TeamPage: React.FC = () => {
     reset,
     formState: { errors, isSubmitting },
   } = useForm<CreateUserInput>({ resolver: zodResolver(createUserSchema) });
+
+  /** Second formulaire : réinitialisation (mot de passe + confirmation). */
+  const {
+    register: registerReset,
+    handleSubmit: handleResetSubmit,
+    reset: resetResetForm,
+    formState: { errors: resetErrors, isSubmitting: isResetting },
+  } = useForm<ResetPasswordInput>({ resolver: zodResolver(resetPasswordFormSchema) });
 
   const load = useCallback(async () => {
     setListError('');
@@ -115,6 +127,40 @@ export const TeamPage: React.FC = () => {
       setListError(error instanceof ApiError ? error.message : 'Archivage impossible.');
     }
   };
+
+  const openResetModal = (user: UserSummary) => {
+    setResetTarget(user);
+    setResetError('');
+    resetResetForm();
+    setIsResetOpen(true);
+  };
+
+  const closeResetModal = () => {
+    setIsResetOpen(false);
+    setResetTarget(null);
+    setResetError('');
+    resetResetForm();
+  };
+
+  const onSubmitReset = handleResetSubmit(async (values) => {
+    if (!resetTarget) {
+      return;
+    }
+
+    setResetError('');
+
+    try {
+      const name = resetTarget.name;
+      await resetUserPasswordApi(resetTarget.id, { password: values.password });
+      closeResetModal();
+      await load();
+      setFeedback(
+        `Mot de passe de ${name} réinitialisé. Communiquez-lui le nouveau mot de passe : il devra le changer à sa prochaine connexion.`,
+      );
+    } catch (error) {
+      setResetError(error instanceof ApiError ? error.message : 'Réinitialisation impossible.');
+    }
+  });
 
   const needle = search.trim().toLowerCase();
   const visibleUsers = needle
@@ -248,6 +294,9 @@ export const TeamPage: React.FC = () => {
                       >
                         {user.isActive ? 'Désactiver' : 'Réactiver'}
                       </Button>
+                      <Button size="sm" variant="secondary" onClick={() => openResetModal(user)}>
+                        Réinitialiser
+                      </Button>
                       <Button size="sm" variant="danger" onClick={() => void handleArchive(user)}>
                         Archiver
                       </Button>
@@ -341,6 +390,60 @@ export const TeamPage: React.FC = () => {
               />
             </Field>
           </div>
+        </form>
+      </Modal>
+
+      <Modal
+        open={isResetOpen}
+        title="Réinitialiser le mot de passe"
+        subtitle={resetTarget ? `Nouveau mot de passe provisoire pour ${resetTarget.name}.` : undefined}
+        onClose={closeResetModal}
+        footer={
+          <>
+            <Button variant="secondary" onClick={closeResetModal}>
+              Annuler
+            </Button>
+            <Button form="reset-password-form" type="submit" loading={isResetting}>
+              Réinitialiser
+            </Button>
+          </>
+        }
+      >
+        {resetError ? (
+          <Alert tone="error" className="mb-4">
+            {resetError}
+          </Alert>
+        ) : null}
+
+        <form id="reset-password-form" onSubmit={onSubmitReset} className="space-y-4">
+          <Field
+            label="Nouveau mot de passe provisoire"
+            htmlFor="reset-password"
+            hint="6 caractères minimum"
+            error={resetErrors.password?.message}
+          >
+            <Input
+              id="reset-password"
+              type="password"
+              autoComplete="new-password"
+              placeholder="••••••••"
+              {...registerReset('password')}
+            />
+          </Field>
+
+          <Field
+            label="Confirmer le mot de passe"
+            htmlFor="reset-password-confirm"
+            error={resetErrors.confirmPassword?.message}
+          >
+            <Input
+              id="reset-password-confirm"
+              type="password"
+              autoComplete="new-password"
+              placeholder="••••••••"
+              {...registerReset('confirmPassword')}
+            />
+          </Field>
         </form>
       </Modal>
     </div>

@@ -200,6 +200,53 @@ const main = async (): Promise<void> => {
   })
   check('Reconnexion avec le nouveau mot de passe → 200', relogin.status === 200, `status ${relogin.status}`)
 
+  const forbiddenReset = await member.request('POST', `/api/users/${createdMemberId}/reset-password`, {
+    password: 'Intrus2026',
+  })
+  check(
+    'POST /api/users/:id/reset-password (membre) → 403',
+    forbiddenReset.status === 403,
+    `status ${forbiddenReset.status}`,
+  )
+
+  const weakReset = await admin.request('POST', `/api/users/${createdMemberId}/reset-password`, {
+    password: 'abc',
+  })
+  check(
+    'POST /api/users/:id/reset-password (trop court) → 422',
+    weakReset.status === 422,
+    `status ${weakReset.status}`,
+  )
+
+  const resetDone = await admin.request('POST', `/api/users/${createdMemberId}/reset-password`, {
+    password: 'ResetPass2026',
+  })
+  check(
+    'POST /api/users/:id/reset-password (admin) → 200',
+    resetDone.status === 200,
+    `status ${resetDone.status}`,
+  )
+
+  const resetRelogin = await makeClient().request('POST', '/api/auth/login', {
+    identifier: MEMBER_EMAIL,
+    password: 'ResetPass2026',
+  })
+  check(
+    'Reconnexion avec le mot de passe réinitialisé → 200',
+    resetRelogin.status === 200,
+    `status ${resetRelogin.status}`,
+  )
+
+  const oldPasswordRejected = await makeClient().request('POST', '/api/auth/login', {
+    identifier: MEMBER_EMAIL,
+    password: 'NouveauPass2026',
+  })
+  check(
+    'Ancien mot de passe refusé après réinitialisation → 401',
+    oldPasswordRejected.status === 401,
+    `status ${oldPasswordRejected.status}`,
+  )
+
   const logout = await member.request('POST', '/api/auth/logout')
   check('POST /api/auth/logout → 204', logout.status === 204, `status ${logout.status}`)
 
