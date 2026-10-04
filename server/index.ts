@@ -18,6 +18,7 @@ import { expenseRoutes } from './routes/expenses.ts'
 import { paymentRoutes } from './routes/payments.ts'
 import { financeRoutes } from './routes/finances.ts'
 import { operationRoutes } from './routes/operations.ts'
+import { penaltyRoutes } from './routes/penalties.ts'
 import { settingsRoutes } from './routes/settings.ts'
 
 
@@ -117,6 +118,7 @@ const routes: RouteDefinition[] = [
   ...paymentRoutes,
   ...financeRoutes,
   ...operationRoutes,
+  ...penaltyRoutes,
   ...settingsRoutes,
 ]
 

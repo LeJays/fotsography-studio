@@ -17,11 +17,13 @@ export const TaskDetailPage = () => {
   const toast = useToast()
   const confirm = useConfirm()
   const [task, setTask] = useState<TaskSummary | null>(null); const [loading, setLoading] = useState(true); const [saving, setSaving] = useState(false)
+  /** Solde de pénalités du membre assigné (admin uniquement) : sert à préparer la déduction. */
+  const [penaltyBalance, setPenaltyBalance] = useState(0)
   // Retour de l'admin (raison + corrections demandées)
   const [returnOpen, setReturnOpen] = useState(false); const [returnNote, setReturnNote] = useState('')
   // Versement de la rémunération (total ou tranche)
   const [payoutAmount, setPayoutAmount] = useState(''); const [payoutMethod, setPayoutMethod] = useState<PaymentMethod>('CASH'); const [payoutReference, setPayoutReference] = useState(''); const [payoutNote, setPayoutNote] = useState('')
-  const load = useCallback(async () => { if (!id) return; try { setTask((await fetchTask(id)).task); setPayoutAmount('') } catch (reason) { toast.error(reason instanceof ApiError ? reason.message : 'Chargement de la tâche impossible.') } finally { setLoading(false) } }, [id, toast])
+  const load = useCallback(async () => { if (!id) return; try { const response = await fetchTask(id); setTask(response.task); setPenaltyBalance(response.penaltyBalance ?? 0); setPayoutAmount('') } catch (reason) { toast.error(reason instanceof ApiError ? reason.message : 'Chargement de la tâche impossible.') } finally { setLoading(false) } }, [id, toast])
   useEffect(() => { void load() }, [load])
   // Pré-remplit le montant du prochain versement avec le reste à payer.
   useEffect(() => { if (task && payoutAmount === '') setPayoutAmount(String(task.payoutRemaining ?? 0)) }, [task, payoutAmount])
@@ -49,7 +51,7 @@ export const TaskDetailPage = () => {
     }
   }
   const sendBack = async () => { if (!task) return; const note = returnNote.trim(); if (!note) { toast.error('Décrivez la raison du renvoi et les corrections attendues.'); return } setSaving(true); try { await reviewTaskApi(task.id, { decision: 'RETURNED', note }); toast.success('Tâche renvoyée au membre avec vos instructions.'); setReturnOpen(false); setReturnNote(''); await load() } catch (reason) { toast.error(reason instanceof ApiError ? reason.message : 'Renvoi impossible.') } finally { setSaving(false) } }
-  const pay = async (event: FormEvent) => { event.preventDefault(); if (!task) return; const amount = Math.round(Number(payoutAmount)); const rest = task.payoutRemaining ?? 0; if (!amount || amount <= 0) { toast.error('Indiquez le montant du versement.'); return } if (amount > rest) { toast.error(`Le montant dépasse le reste à payer (${formatAmount(rest)}).`); return } setSaving(true); try { await payTaskPayoutApi(task.id, { amount, method: payoutMethod, reference: payoutReference.trim() || undefined, note: payoutNote.trim() || undefined }); toast.success(`Versement de ${formatAmount(amount)} enregistré.`); setPayoutReference(''); setPayoutNote(''); await load() } catch (reason) { toast.error(reason instanceof ApiError ? reason.message : 'Paiement impossible.') } finally { setSaving(false) } }
+  const pay = async (event: FormEvent) => { event.preventDefault(); if (!task) return; const amount = Math.round(Number(payoutAmount)); const rest = task.payoutRemaining ?? 0; if (!amount || amount <= 0) { toast.error('Indiquez le montant du versement.'); return } if (amount > rest) { toast.error(`Le montant dépasse le reste à payer (${formatAmount(rest)}).`); return } setSaving(true); try { const result = await payTaskPayoutApi(task.id, { amount, method: payoutMethod, reference: payoutReference.trim() || undefined, note: payoutNote.trim() || undefined }); toast.success(result.penaltyDeducted > 0 ? `Versement enregistré : ${formatAmount(result.penaltyDeducted)} de pénalité déduite, ${formatAmount(result.netPaid)} versés à ${task.assignedUserName}.` : `Versement de ${formatAmount(amount)} enregistré.`); setPayoutReference(''); setPayoutNote(''); await load() } catch (reason) { toast.error(reason instanceof ApiError ? reason.message : 'Paiement impossible.') } finally { setSaving(false) } }
   if (loading) return <Card className="p-12 text-center text-sm text-studio-dark/55">Chargement de la tâche…</Card>
   if (!task) return <div className="space-y-4"><div className="rounded-xl border border-studio-terracotta/30 bg-studio-terracotta/10 px-4 py-3 text-sm text-studio-terracotta">Tâche introuvable ou vous n’avez pas accès à cette fiche.</div><Link to="/mes-taches"><Button variant="secondary"><ArrowLeft className="h-4 w-4" />Retour</Button></Link></div>
   const isAssignee = user?.id === task.assignedUserId
@@ -101,6 +103,21 @@ export const TaskDetailPage = () => {
         <StatCard label="À livrer le" value={formatDate(task.deliveryDate)} icon={<CalendarDays className="h-5 w-5" />} />
         <StatCard label="Responsable" value={task.assignedUserName} />
       </div>
+      {task.latePenalty && (task.latePenalty.accrued > 0 || task.latePenalty.running) ? (
+        <Card className={task.latePenalty.running ? 'border-red-200 bg-red-50/60' : 'border-amber-200 bg-amber-50/60'}>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="font-serif text-xl font-bold text-red-700">Pénalité de retard</h2>
+              <p className="mt-1 text-sm text-studio-dark/70">
+                {task.latePenalty.running
+                  ? `Cumul en cours : ${task.latePenalty.daysLate} jour${task.latePenalty.daysLate > 1 ? 's' : ''} de retard, ${task.latePenalty.blocks} tranche${task.latePenalty.blocks > 1 ? 's' : ''} acquise${task.latePenalty.blocks > 1 ? 's' : ''}. Le travail doit être envoyé pour arrêter la somme.`
+                  : `Cumul figé à l’envoi du travail : ${task.latePenalty.blocks} tranche${task.latePenalty.blocks > 1 ? 's' : ''}. Dette enregistrée au nom de ${task.assignedUserName}, réglable dans les Finances.`}
+              </p>
+            </div>
+            <p className="font-serif text-2xl font-bold text-red-600">{formatAmount(task.latePenalty.accrued)}</p>
+          </div>
+        </Card>
+      ) : null}
       <Card className="space-y-3">
         <h2 className="font-serif text-xl font-bold">Informations de la tâche</h2>
         <p><strong>Projet :</strong> {task.projectName}</p>
@@ -144,6 +161,16 @@ export const TaskDetailPage = () => {
               <p className="border-t border-studio-dark/10 pt-4 text-sm text-studio-dark/55">Aucune rémunération membre n’est prévue pour cette tâche.</p>
             ) : remaining > 0 ? (
               <form onSubmit={pay} className="grid gap-3 border-t border-studio-dark/10 pt-4 md:grid-cols-2">
+                {penaltyBalance > 0 ? (
+                  <div className="md:col-span-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs leading-relaxed text-red-700">
+                    <strong>Pénalité de retard due par {task.assignedUserName} : {formatAmount(penaltyBalance)}</strong>
+                    {Math.round(Number(payoutAmount)) > 0 ? (
+                      <p className="mt-1">Sur ce versement, {formatAmount(Math.min(penaltyBalance, Math.round(Number(payoutAmount))))} seront déduits → {formatAmount(Math.max(0, Math.round(Number(payoutAmount)) - Math.min(penaltyBalance, Math.round(Number(payoutAmount)))))} versés net.</p>
+                    ) : (
+                      <p className="mt-1">Elle sera déduite automatiquement de ce versement. Un règlement partiel peut être enregistré depuis les Finances.</p>
+                    )}
+                  </div>
+                ) : null}
                 <Field label={`Montant à verser — reste ${formatAmount(remaining)}`} htmlFor="payoutAmount">
                   <Input id="payoutAmount" type="number" min={1} max={remaining} required value={payoutAmount} onChange={(event) => setPayoutAmount(event.target.value)} />
                 </Field>

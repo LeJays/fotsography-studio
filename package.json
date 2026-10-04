@@ -7,15 +7,18 @@
     "node": ">=24"
   },
   "scripts": {
+    "postinstall": "prisma generate",
     "dev": "node scripts/dev.mjs",
     "dev:web": "vite",
     "dev:api": "node --watch server/index.ts",
     "start:api": "node server/index.ts",
-    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.server.json",
-    "build": "prisma generate && npm run typecheck && vite build",
+    "typecheck": "prisma generate && tsc -p tsconfig.json && tsc -p tsconfig.server.json",
+    "build": "npm run typecheck && vite build",
     "lint": "oxlint",
     "test": "npm run test:smoke",
     "test:smoke": "node scripts/smoke.ts",
+    "test:penalty": "node scripts/penalty-check.ts",
+    "test:penalty:e2e": "node scripts/penalty-e2e.ts",
     "preview": "vite preview",
     "db:push": "prisma db push"
   },

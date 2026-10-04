@@ -293,6 +293,20 @@ export interface TaskReviewSummary {
   reviewedByName: string | null
 }
 
+/** Cumul de pénalité de retard d'une tâche (montants : admin + membre assigné). */
+export interface TaskLatePenaltySummary {
+  /** Montant total des tranches acquises. */
+  accrued: number
+  /** Nombre de tranches de 10 000 F (ou montant réglé) déjà comptées. */
+  blocks: number
+  /** Jours de retard au moment du calcul. */
+  daysLate: number
+  /** Le cumul est en cours : la date est passée et le travail pas encore envoyé. */
+  running: boolean
+  /** Date d'arrêt du cumul (travail envoyé ou tâche archivée). */
+  finalizedAt: string | null
+}
+
 export interface TaskSummary {
   id: string
   name: string
@@ -316,6 +330,10 @@ export interface TaskSummary {
   payoutRemaining?: number
   /** Historique des validations/renvois par l'admin. */
   reviews?: TaskReviewSummary[]
+  /** La date de livraison est dépassée et le travail pas encore envoyé (badge « Retard »). */
+  isLate?: boolean
+  /** Détail de la pénalité — visible par l'admin, l'assistant et le membre assigné. */
+  latePenalty?: TaskLatePenaltySummary | null
 }
 
 export interface PayoutTaskPayload {
@@ -327,6 +345,72 @@ export interface PayoutTaskPayload {
 
 export interface ReviewTaskPayload {
   decision: TaskReviewDecision
+  note?: string
+}
+
+/* ------------------------------ Pénalités de retard ------------------------------ */
+
+export type PenaltyPaymentKind = 'MANUAL' | 'WITHDRAWN'
+
+/** Règlement de pénalité enregistré (paiement direct ou déduction sur un versement). */
+export interface PenaltyPaymentSummary {
+  id: string
+  userId: string
+  userName: string
+  amount: number
+  kind: PenaltyPaymentKind
+  method: PaymentMethod
+  reference: string | null
+  note: string | null
+  taskId: string | null
+  taskName: string | null
+  receiptNumber: string | null
+  paidAt: string
+  paidByName: string | null
+}
+
+/** Tâche pénalisée (cumul de retard) dans le suivi admin. */
+export interface PenaltyTaskSummary {
+  id: string
+  name: string
+  projectName: string
+  activityName: string
+  deliveryDate: string
+  status: TaskSummary['status']
+  blocks: number
+  accrued: number
+  daysLate: number
+  running: boolean
+  finalizedAt: string | null
+}
+
+/** Solde de pénalités d'un membre : accumulé − payé. */
+export interface PenaltyMemberSummary {
+  userId: string
+  name: string
+  role: AuthRole
+  accrued: number
+  paid: number
+  balance: number
+  tasks: PenaltyTaskSummary[]
+}
+
+/** Vue d'ensemble du suivi des pénalités (admin). */
+export interface PenaltyOverview {
+  enabled: boolean
+  amount: number
+  intervalDays: number
+  totals: { accrued: number; paid: number; balance: number }
+  members: PenaltyMemberSummary[]
+  payments: PenaltyPaymentSummary[]
+}
+
+/** Paiement (total ou partiel) d'une pénalité par l'admin. */
+export interface PayPenaltyPayload {
+  userId: string
+  amount: number
+  method?: PaymentMethod
+  reference?: string
   note?: string
 }
 

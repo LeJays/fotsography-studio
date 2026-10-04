@@ -12,6 +12,7 @@ import { ActivitiesPage } from '../features/tasks/ActivitiesPage';
 import { ActivityDetailPage } from '../features/tasks/ActivityDetailPage';
 import { TeamPage } from '../features/team/TeamPage';
 import { FinancesPage } from '../features/finances/FinancesPage';
+import { PenaltiesPage } from '../features/finances/PenaltiesPage';
 import { SettingsPage } from '../features/settings/SettingsPage';
 import { AuthPage } from '../pages/AuthPage';
 import { RequireAuth, RequireRole } from './guards';
@@ -36,6 +37,7 @@ export const router = createBrowserRouter([
               { path: '/projets', element: <ProjectsPage /> },
               { path: '/projets/:id', element: <ProjectDetailPage /> },
               { path: '/taches', element: <ActivitiesPage /> },
+              { path: '/penalites', element: <PenaltiesPage /> },
               { path: '/activites/:id', element: <ActivityDetailPage /> },
             ],
           },

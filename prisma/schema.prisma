@@ -79,6 +79,10 @@ model User {
   tasks            Task[]
   taskPayouts      TaskPayout[]
   taskReviews      TaskReview[]
+  /** Pénalités de retard dont ce membre est redevable. */
+  penaltyPayments  PenaltyPayment[]     @relation("PenaltyOwedBy")
+  /** Pénalités encaissées (paiements directs et déductions) par cet utilisateur. */
+  penaltyCollected PenaltyPayment[]     @relation("PenaltyCollectedBy")
   receivedPayments Payment[]  @relation("PaymentReceivedBy")
   receipts         Receipt[]
   auditLogs        AuditLog[]
@@ -233,9 +237,16 @@ model Task {
   createdAt              DateTime   @default(now())
   updatedAt              DateTime   @updatedAt
   archivedAt             DateTime?
+  /** Nombre de tranches de pénalité de retard déjà acquises. */
+  latePenaltyBlocks      Int        @default(0)
+  /** Montant total des pénalités acquises (figé à l'envoi du travail). */
+  latePenaltyAccrued     Int        @default(0)
+  /** Date à laquelle le cumul s'est arrêté (travail envoyé ou tâche archivée). */
+  latePenaltyFinalizedAt DateTime?
 
-  payouts  TaskPayout[]
-  reviews  TaskReview[]
+  payouts          TaskPayout[]
+  reviews          TaskReview[]
+  penaltyPayments  PenaltyPayment[]
 
   @@index([assignedUserId, status])
 }
@@ -273,6 +284,40 @@ model TaskReview {
   @@index([taskId, reviewedAt])
 }
 
+/** Type d'enregistrement d'une pénalité : paiement direct ou déduction sur un versement. */
+enum PenaltyPaymentKind {
+  MANUAL
+  WITHDRAWN
+}
+
+/**
+ * Traçabilité des règlements de pénalités de retard.
+ * - `MANUAL` : l'admin encaisse un paiement direct (montant libre, partiel autorisé) ;
+ * - `WITHDRAWN` : montant retenu automatiquement sur le versement d'une tâche.
+ */
+model PenaltyPayment {
+  id            String             @id @default(uuid())
+  userId        String
+  user          User               @relation("PenaltyOwedBy", fields: [userId], references: [id])
+  amount        Int
+  kind          PenaltyPaymentKind @default(MANUAL)
+  method        PaymentMethod      @default(CASH)
+  reference     String?
+  note          String?
+  /** Tâche dont le versement a financé la déduction (kind = WITHDRAWN). */
+  taskId        String?
+  task          Task?              @relation(fields: [taskId], references: [id])
+  /** Numéro du reçu du versement auquel cette déduction est rattachée. */
+  receiptNumber String?
+  paidAt        DateTime           @default(now())
+  paidById      String?
+  paidBy        User?              @relation("PenaltyCollectedBy", fields: [paidById], references: [id])
+  createdAt     DateTime           @default(now())
+
+  @@index([userId, paidAt])
+  @@index([taskId])
+}
+
 model StudioSettings {
   id                         String   @id @default("studio")
   name                       String   @default("Fotsography Studio")
@@ -286,6 +331,12 @@ model StudioSettings {
   defaultPercentIntermediate Int      @default(50)
   defaultPercentFinal        Int      @default(20)
   taskDeliveryLeadDays       Int      @default(5)
+  /** Pénalités de retard sur les tâches : option activable/désactivable par l'admin. */
+  latePenaltyEnabled         Boolean  @default(false)
+  /** Montant d'une tranche de pénalité (10 000 F par défaut). */
+  latePenaltyAmount          Int      @default(10000)
+  /** Fréquence du cumul en jours (1 tranche tous les 2 jours par défaut). */
+  latePenaltyIntervalDays    Int      @default(2)
   updatedAt                  DateTime @updatedAt
 }
 

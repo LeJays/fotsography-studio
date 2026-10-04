@@ -368,10 +368,15 @@ export const ActivityDetailPage = () => {
                       <p className="mt-1.5 line-clamp-2 text-xs leading-relaxed text-studio-dark/60">{task.description}</p>
                     ) : null}
                   </div>
-                  <Badge tone={taskStatusTones[task.status]}>
-                    {task.status === 'COMPLETED' ? <CheckCircle2 className="h-3 w-3" /> : null}
-                    {taskStatusLabels[task.status]}
-                  </Badge>
+                  <div className="flex items-center gap-2">
+                    {task.isLate ? (
+                      <Badge tone="red" dot>Retard{task.latePenalty ? ` · ${formatAmount(task.latePenalty.accrued)}` : ''}</Badge>
+                    ) : null}
+                    <Badge tone={taskStatusTones[task.status]}>
+                      {task.status === 'COMPLETED' ? <CheckCircle2 className="h-3 w-3" /> : null}
+                      {taskStatusLabels[task.status]}
+                    </Badge>
+                  </div>
                 </div>
 
                 <div className="space-y-2 text-sm text-studio-dark/70">

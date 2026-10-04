@@ -25,6 +25,9 @@ import type {
   UpdateExpensePayload,
   PaymentSummary,
   PayoutTaskPayload,
+  PenaltyOverview,
+  PenaltyPaymentSummary,
+  PayPenaltyPayload,
   ReviewTaskPayload,
   FinanceOverview,
   OperationsOverview,
@@ -161,12 +164,18 @@ export const archiveActivityApi = (id: string): Promise<void> => apiDelete(`/api
 export const fetchTasks = (activityId?: string): Promise<{ tasks: TaskSummary[] }> => apiGet(activityId ? `/api/tasks?activityId=${activityId}` : '/api/tasks');
 /** Tâches attribuées à l'utilisateur connecté, quel que soit son rôle (page « Mes tâches »). */
 export const fetchMyTasks = (): Promise<{ tasks: TaskSummary[] }> => apiGet('/api/tasks?mine=true');
-export const fetchTask = (id: string): Promise<{ task: TaskSummary }> => apiGet(`/api/tasks/${id}`);
+export const fetchTask = (id: string): Promise<{ task: TaskSummary; penaltyBalance?: number }> => apiGet(`/api/tasks/${id}`);
 export const updateOwnTaskApi = (id: string, payload: { status: TaskSummary['status']; proofLink?: string }): Promise<{ task: TaskSummary }> => apiPatch(`/api/tasks/${id}/progress`, payload);
 /** Versement total ou partiel de la rémunération — l'historique des tranches est conservé côté serveur. */
-export const payTaskPayoutApi = (id: string, payload: PayoutTaskPayload): Promise<{ task: TaskSummary }> => apiPost(`/api/tasks/${id}/payout`, payload);
+export const payTaskPayoutApi = (id: string, payload: PayoutTaskPayload): Promise<{ task: TaskSummary; penaltyDeducted: number; netPaid: number; penaltyBalance: number }> => apiPost(`/api/tasks/${id}/payout`, payload);
 /** Validation ou renvoi (avec raison et corrections) d'une tâche terminée — réservé à l'admin. */
 export const reviewTaskApi = (id: string, payload: ReviewTaskPayload): Promise<{ task: TaskSummary }> => apiPost(`/api/tasks/${id}/review`, payload);
+/* --------------------------- Pénalités de retard (admin) --------------------------- */
+/** Suivi des pénalités : soldes par membre, tâches pénalisées et historique des règlements. */
+export const fetchPenaltiesApi = (): Promise<{ overview: PenaltyOverview }> => apiGet('/api/penalties');
+/** Paiement (total ou partiel) d'une pénalité — chaque règlement est tracé. */
+export const payPenaltyApi = (payload: PayPenaltyPayload): Promise<{ payment: PenaltyPaymentSummary; balance: number }> =>
+  apiPost('/api/penalties/payments', payload);
 export const createTaskApi = (payload: CreateTaskPayload): Promise<{ task: TaskSummary }> => apiPost('/api/tasks', payload);
 export const updateTaskApi = (id: string, payload: Partial<CreateTaskPayload>): Promise<{ task: TaskSummary }> => apiPatch(`/api/tasks/${id}`, payload);
 export const archiveTaskApi = (id: string): Promise<void> => apiDelete(`/api/tasks/${id}`);

@@ -30,6 +30,12 @@ export const CURRENCY = 'FCFA'
 /** Nombre de jours avant la livraison globale pour la livraison d'une tâche. */
 export const TASK_DELIVERY_LEAD_DAYS = 5
 
+/** Montant (FCFA) d'une tranche de pénalité pour une tâche livrée en retard. */
+export const LATE_PENALTY_AMOUNT = 10000
+
+/** Fréquence du cumul de pénalité : une tranche tous les 2 jours (première tranche dès 1 jour de retard). */
+export const LATE_PENALTY_INTERVAL_DAYS = 2
+
 export const MIN_PASSWORD_LENGTH = 6
 
 /** Fourchettes du plan de paiement par défaut (30 % / 50 % / 20 %). */

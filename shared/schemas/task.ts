@@ -49,3 +49,14 @@ export const reviewTaskSchema = z
   })
 
 export type ReviewTaskInput = z.infer<typeof reviewTaskSchema>
+
+/** Paiement (total ou partiel) d'une pénalité de retard par l'admin. */
+export const payPenaltySchema = z.object({
+  userId: z.string().uuid('Membre invalide.'),
+  amount: z.coerce.number().int().positive('Le montant doit être supérieur à zéro.'),
+  method: z.enum(['CASH', 'MOMO', 'BANK']).optional(),
+  reference: z.string().trim().max(120).optional(),
+  note: z.string().trim().max(500).optional(),
+})
+
+export type PayPenaltyInput = z.infer<typeof payPenaltySchema>

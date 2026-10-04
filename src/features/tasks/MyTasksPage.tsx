@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
-import { CalendarDays, CircleCheck, ListChecks, Undo2 } from 'lucide-react'
+import { AlertTriangle, CalendarDays, CircleCheck, ListChecks, Undo2 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { formatDate } from '../../../shared/dates.ts'
 import { formatAmount } from '../../../shared/money.ts'
@@ -106,6 +106,16 @@ export const MyTasksPage = () => {
                   <CalendarDays className="h-4 w-4 text-studio-terracotta" />
                   À livrer le {formatDate(task.deliveryDate)}
                 </p>
+                {task.latePenalty && (task.latePenalty.accrued > 0 || task.latePenalty.running) ? (
+                  <p className="flex items-start gap-1.5 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">
+                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                    <span>
+                      {task.latePenalty.running
+                        ? `Retard de ${task.latePenalty.daysLate} jour${task.latePenalty.daysLate > 1 ? 's' : ''} : pénalité en cours de cumul (${formatAmount(task.latePenalty.accrued)}). Envoyez votre travail pour l'arrêter.`
+                        : `Pénalité de retard : ${formatAmount(task.latePenalty.accrued)} à régler (déduite automatiquement de vos prochains versements).`}
+                    </span>
+                  </p>
+                ) : null}
                 {returned ? (
                   <p className="flex items-start gap-1.5 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">
                     <Undo2 className="mt-0.5 h-3.5 w-3.5 shrink-0" />

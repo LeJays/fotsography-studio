@@ -8,11 +8,12 @@ import { requireAuth, requireRole } from '../middleware/auth.ts'
 import { bodyOf, validateBody } from '../middleware/validate.ts'
 import type { RouteContext, RouteDefinition } from '../router.ts'
 import { recordAudit } from '../services/audit.ts'
+import { loadPenaltySettings, memberPenaltyBalance, syncTaskPenalty, type PenaltySnapshot } from '../services/penalties.ts'
 
 /** Versement d'une rémunération — lignes d'historique (total ou tranche), visibles admin + assigné. */
 type TaskPayoutRecord = { id: string; amount: number; method: 'CASH' | 'MOMO' | 'BANK'; reference: string | null; note: string | null; receiptNumber: string | null; paidAt: Date; paidBy: { name: string } | null }
 type TaskReviewRecord = { id: string; decision: 'APPROVED' | 'RETURNED'; note: string | null; reviewedAt: Date; reviewedBy: { name: string } | null }
-const toTask = (task: { id: string; activityId: string; name: string; description: string | null; deliveryDate: Date; status: TaskSummary['status']; proofLink: string | null; memberPayout: number | null; payoutPaidAt: Date | null; clientPriceShare: number | null; activity: { name: string; project: { eventName: string } }; assignedUser: { id: string; name: string }; payouts?: TaskPayoutRecord[]; reviews?: TaskReviewRecord[] }, options: { includeMargin: boolean; includePayout: boolean }): TaskSummary => {
+const toTask = (task: { id: string; activityId: string; name: string; description: string | null; deliveryDate: Date; status: TaskSummary['status']; proofLink: string | null; memberPayout: number | null; payoutPaidAt: Date | null; clientPriceShare: number | null; activity: { name: string; project: { eventName: string } }; assignedUser: { id: string; name: string }; payouts?: TaskPayoutRecord[]; reviews?: TaskReviewRecord[] }, options: { includeMargin: boolean; includePayout: boolean; includePenalty: boolean; penalty: PenaltySnapshot }): TaskSummary => {
   const payoutList = task.payouts ?? []
   const recordedTotal = payoutList.reduce((total, item) => total + item.amount, 0)
   // Rétrocompatibilité : les tâches payées avant la mise en place de l'historique n'ont pas de lignes de versement.
@@ -36,17 +37,34 @@ const toTask = (task: { id: string; activityId: string; name: string; descriptio
           reviews: task.reviews.map((item) => ({ id: item.id, decision: item.decision, note: item.note, reviewedAt: item.reviewedAt.toISOString(), reviewedByName: item.reviewedBy?.name ?? null })),
         }
       : {}),
+    // Badge « Retard » : visible par tous les pilotes de la tâche (admin, assistant, assigné).
+    isLate: options.penalty.running,
+    // Montants de pénalité : admin, assistant et membre assigné (l'assistant encaisse les règlements).
+    ...(options.includePenalty
+      ? {
+          latePenalty: {
+            accrued: options.penalty.accrued,
+            blocks: options.penalty.blocks,
+            daysLate: options.penalty.daysLate,
+            running: options.penalty.running,
+            finalizedAt: options.penalty.finalizedAt?.toISOString() ?? null,
+          },
+        }
+      : {}),
   }
 }
 const taskInclude = {
   activity: { select: { name: true, project: { select: { eventName: true } } } },
-  assignedUser: { select: { id: true, name: true } },
+  assignedUser: { select: { id: true, name: true, role: true } },
   payouts: { orderBy: { paidAt: 'desc' }, include: { paidBy: { select: { name: true } } } },
   reviews: { orderBy: { reviewedAt: 'desc' }, include: { reviewedBy: { select: { name: true } } } },
 } as const
 /** Montants réservés à l'admin (part client) et à l'assigné (sa rémunération). */
 const isAdminActor = (ctx: RouteContext): boolean => ctx.actor?.role === 'ADMIN'
 const payoutVisible = (ctx: RouteContext, assignedUserId: string): boolean => isAdminActor(ctx) || ctx.actor?.id === assignedUserId
+/** Pénalités : visibles par l'admin, l'assistant (suivi + encaissement) et le membre assigné. */
+const penaltyVisible = (ctx: RouteContext, assignedUserId: string): boolean =>
+  isAdminActor(ctx) || ctx.actor?.role === 'ASSISTANT' || ctx.actor?.id === assignedUserId
 const receiptNumber = async (prefix: string): Promise<string> => {
   const count = await prisma.receipt.count()
   return `${prefix}-${new Date().getFullYear()}-${String(count + 1).padStart(5, '0')}`
@@ -60,13 +78,26 @@ const listTasks = async (ctx: RouteContext): Promise<void> => {
   const mine = ctx.url.searchParams.get('mine') === 'true'
   const assignedUserId = mine || !canSeeAll ? ctx.actor?.id : undefined
   const tasks = await prisma.task.findMany({ where: { archivedAt: null, ...(activityId ? { activityId } : {}), ...(assignedUserId ? { assignedUserId } : {}) }, include: taskInclude, orderBy: { deliveryDate: 'asc' } })
-  sendJson(ctx.res, 200, { tasks: tasks.map((task) => toTask(task, { includeMargin: isAdmin, includePayout: payoutVisible(ctx, task.assignedUserId) })) })
+  // Synchronise les cumuls de pénalité de retard avant de répondre (chiffres toujours à jour).
+  const settings = await loadPenaltySettings()
+  const serialized = []
+  for (const task of tasks) {
+    const penalty = await syncTaskPenalty(task, settings)
+    serialized.push(toTask(task, { includeMargin: isAdmin, includePayout: payoutVisible(ctx, task.assignedUserId), includePenalty: penaltyVisible(ctx, task.assignedUserId), penalty }))
+  }
+  sendJson(ctx.res, 200, { tasks: serialized })
 }
 const getTask = async (ctx: RouteContext): Promise<void> => {
   const task = await prisma.task.findFirst({ where: { id: ctx.params.id, archivedAt: null }, include: taskInclude })
   const canSeeAll = ctx.actor?.role === 'ADMIN' || ctx.actor?.role === 'ASSISTANT'
   if (!task || (!canSeeAll && task.assignedUserId !== ctx.actor?.id)) throw new HttpError(404, 'Tâche introuvable.')
-  sendJson(ctx.res, 200, { task: toTask(task, { includeMargin: isAdminActor(ctx), includePayout: payoutVisible(ctx, task.assignedUserId) }) })
+  const penalty = await syncTaskPenalty(task, await loadPenaltySettings())
+  // L'admin et l'assistant ont besoin du solde de pénalités du membre (préparation du versement / encaissement).
+  const penaltyBalance = penaltyVisible(ctx, task.assignedUserId) ? (await memberPenaltyBalance(task.assignedUserId)).balance : undefined
+  sendJson(ctx.res, 200, {
+    task: toTask(task, { includeMargin: isAdminActor(ctx), includePayout: payoutVisible(ctx, task.assignedUserId), includePenalty: true, penalty }),
+    ...(penaltyBalance === undefined ? {} : { penaltyBalance }),
+  })
 }
 const createTask = async (ctx: RouteContext): Promise<void> => {
   const isAdmin = isAdminActor(ctx)
@@ -96,7 +127,8 @@ const createTask = async (ctx: RouteContext): Promise<void> => {
     include: taskInclude,
   })
   await recordAudit({ actorId: ctx.actor?.id, action: 'task.create', entity: 'Task', entityId: task.id, payload: { activityId: task.activityId, assignedUserId: task.assignedUserId } })
-  sendJson(ctx.res, 201, { task: toTask(task, { includeMargin: isAdmin, includePayout: payoutVisible(ctx, task.assignedUserId) }) })
+  const penalty = await syncTaskPenalty(task, await loadPenaltySettings())
+  sendJson(ctx.res, 201, { task: toTask(task, { includeMargin: isAdmin, includePayout: payoutVisible(ctx, task.assignedUserId), includePenalty: penaltyVisible(ctx, task.assignedUserId), penalty }) })
 }
 const updateTask = async (ctx: RouteContext): Promise<void> => {
   const isAdmin = isAdminActor(ctx)
@@ -124,12 +156,16 @@ const updateTask = async (ctx: RouteContext): Promise<void> => {
     include: taskInclude,
   })
   await recordAudit({ actorId: ctx.actor?.id, action: 'task.update', entity: 'Task', entityId: updated.id, payload: data })
-  sendJson(ctx.res, 200, { task: toTask(updated, { includeMargin: isAdmin, includePayout: payoutVisible(ctx, updated.assignedUserId) }) })
+  // Une date de livraison repoussée/avancée recalcule le cumul immédiatement.
+  const penalty = await syncTaskPenalty(updated, await loadPenaltySettings())
+  sendJson(ctx.res, 200, { task: toTask(updated, { includeMargin: isAdmin, includePayout: payoutVisible(ctx, updated.assignedUserId), includePenalty: penaltyVisible(ctx, updated.assignedUserId), penalty }) })
 }
 const archiveTask = async (ctx: RouteContext): Promise<void> => {
   const task = await prisma.task.findFirst({ where: { id: ctx.params.id, archivedAt: null } })
   if (!task) throw new HttpError(404, 'Tâche introuvable.')
-  await prisma.task.update({ where: { id: task.id }, data: { archivedAt: new Date() } })
+  const archived = await prisma.task.update({ where: { id: task.id }, data: { archivedAt: new Date() }, include: taskInclude })
+  // Archiver fige le cumul : les pénalités déjà acquises restent dues.
+  await syncTaskPenalty(archived, await loadPenaltySettings())
   await recordAudit({ actorId: ctx.actor?.id, action: 'task.archive', entity: 'Task', entityId: task.id })
   sendJson(ctx.res, 204, {})
 }
@@ -143,11 +179,13 @@ const updateOwnTask = async (ctx: RouteContext): Promise<void> => {
   if (data.status === 'COMPLETED' && !nextProof) throw new HttpError(400, 'Une preuve (lien photo ou vidéo) est obligatoire pour terminer la tâche.')
   const updated = await prisma.task.update({ where: { id: task.id }, data: { status: data.status, proofLink: nextProof, completedAt: data.status === 'COMPLETED' ? task.completedAt ?? new Date() : null }, include: taskInclude })
   await recordAudit({ actorId: ctx.actor?.id, action: 'task.progress', entity: 'Task', entityId: task.id, payload: { status: data.status } })
-  sendJson(ctx.res, 200, { task: toTask(updated, { includeMargin: false, includePayout: payoutVisible(ctx, updated.assignedUserId) }) })
+  // Envoyer le travail (statut ≠ « À faire ») fige le cumul de pénalité à son montant actuel.
+  const penalty = await syncTaskPenalty(updated, await loadPenaltySettings())
+  sendJson(ctx.res, 200, { task: toTask(updated, { includeMargin: false, includePayout: payoutVisible(ctx, updated.assignedUserId), includePenalty: penaltyVisible(ctx, updated.assignedUserId), penalty }) })
 }
 /** Versement total ou partiel (tranche) : l'historique est conservé et un reçu est émis à chaque versement. */
 const payTaskPayout = async (ctx: RouteContext): Promise<void> => {
-  const task = await prisma.task.findFirst({ where: { id: ctx.params.id, archivedAt: null }, include: { assignedUser: { select: { name: true } }, activity: { include: { project: { include: { client: true } } } }, payouts: { select: { amount: true } } } })
+  const task = await prisma.task.findFirst({ where: { id: ctx.params.id, archivedAt: null }, include: { assignedUser: { select: { id: true, name: true, role: true } }, activity: { include: { project: { include: { client: true } } } }, payouts: { select: { amount: true } } } })
   if (!task) throw new HttpError(404, 'Tâche introuvable.')
   if (!task.memberPayout || task.memberPayout <= 0) throw new HttpError(400, 'Aucune rémunération n’est prévue pour cette tâche.')
   const data = bodyOf<{ amount: number; method?: 'CASH' | 'MOMO' | 'BANK'; reference?: string; note?: string }>(ctx)
@@ -158,12 +196,39 @@ const payTaskPayout = async (ctx: RouteContext): Promise<void> => {
   if (remaining <= 0) throw new HttpError(409, 'Cette rémunération est déjà entièrement payée.')
   if (data.amount > remaining) throw new HttpError(400, `Le montant dépasse le reste à payer (${formatAmount(remaining)}).`)
   const settings = await prisma.studioSettings.upsert({ where: { id: 'studio' }, update: {}, create: {} })
+  // Cumul de pénalité à jour, puis déduction automatique du solde dû sur le versement.
+  const penaltySettings = { enabled: settings.latePenaltyEnabled, amount: settings.latePenaltyAmount, intervalDays: Math.max(1, settings.latePenaltyIntervalDays) }
+  const penaltySnapshot = await syncTaskPenalty(task, penaltySettings)
+  const penalty = await memberPenaltyBalance(task.assignedUserId)
+  const penaltyDeducted = Math.min(penalty.balance, data.amount)
+  const netPaid = data.amount - penaltyDeducted
   const number = await receiptNumber(settings.receiptPrefix)
-  await prisma.receipt.create({ data: { number, type: 'CUSTOM', projectId: task.activity.projectId, amount: data.amount, snapshot: { documentType: 'MEMBER_PAYOUT_RECEIPT', studioName: settings.name, clientName: task.activity.project.client.name, taskName: task.name, memberName: task.assignedUser.name, amount: data.amount, paidTotal: alreadyPaid + data.amount, memberPayout: task.memberPayout }, createdById: ctx.actor?.id ?? null } })
+  await prisma.receipt.create({ data: { number, type: 'CUSTOM', projectId: task.activity.projectId, amount: data.amount, snapshot: { documentType: 'MEMBER_PAYOUT_RECEIPT', studioName: settings.name, clientName: task.activity.project.client.name, taskName: task.name, memberName: task.assignedUser.name, amount: data.amount, paidTotal: alreadyPaid + data.amount, memberPayout: task.memberPayout, penaltyDeducted, netPaid }, createdById: ctx.actor?.id ?? null } })
   const payout = await prisma.taskPayout.create({ data: { taskId: task.id, amount: data.amount, method: data.method ?? 'CASH', reference: data.reference?.trim() || null, note: data.note?.trim() || null, receiptNumber: number, paidById: ctx.actor?.id ?? null } })
+  // Traçabilité de la retenue : chaque déduction de pénalité est enregistrée (rattachée au reçu du versement).
+  if (penaltyDeducted > 0) {
+    await prisma.penaltyPayment.create({
+      data: {
+        userId: task.assignedUserId,
+        amount: penaltyDeducted,
+        kind: 'WITHDRAWN',
+        method: data.method ?? 'CASH',
+        reference: data.reference?.trim() || null,
+        note: data.note?.trim() || `Déduction automatique sur le versement de la tâche « ${task.name} »`,
+        taskId: task.id,
+        receiptNumber: number,
+        paidById: ctx.actor?.id ?? null,
+      },
+    })
+  }
   const updated = await prisma.task.update({ where: { id: task.id }, data: { payoutPaidAt: payout.paidAt }, include: taskInclude })
-  await recordAudit({ actorId: ctx.actor?.id, action: 'task.payout_paid', entity: 'Task', entityId: task.id, payload: { amount: data.amount, remaining: remaining - data.amount } })
-  sendJson(ctx.res, 200, { task: toTask(updated, { includeMargin: isAdminActor(ctx), includePayout: true }) })
+  await recordAudit({ actorId: ctx.actor?.id, action: 'task.payout_paid', entity: 'Task', entityId: task.id, payload: { amount: data.amount, remaining: remaining - data.amount, penaltyDeducted, netPaid, penaltyBalanceAfter: penalty.balance - penaltyDeducted } })
+  sendJson(ctx.res, 200, {
+    task: toTask(updated, { includeMargin: isAdminActor(ctx), includePayout: true, includePenalty: true, penalty: penaltySnapshot }),
+    penaltyDeducted,
+    netPaid,
+    penaltyBalance: penalty.balance - penaltyDeducted,
+  })
 }
 /** Validation (APPROVED) ou renvoi (RETURNED : raison + corrections demandées) d'une tâche terminée — admin. */
 const reviewTask = async (ctx: RouteContext): Promise<void> => {
@@ -179,7 +244,9 @@ const reviewTask = async (ctx: RouteContext): Promise<void> => {
   // Un renvoi repose la tâche en « À faire » pour que le membre reparte sur des bases claires.
   const updated = await prisma.task.update({ where: { id: task.id }, data: data.decision === 'RETURNED' ? { status: 'PENDING', completedAt: null } : {}, include: taskInclude })
   await recordAudit({ actorId: ctx.actor?.id, action: data.decision === 'APPROVED' ? 'task.approved' : 'task.returned', entity: 'Task', entityId: task.id, payload: { note } })
-  sendJson(ctx.res, 200, { task: toTask(updated, { includeMargin: isAdminActor(ctx), includePayout: payoutVisible(ctx, task.assignedUserId) }) })
+  // Un renvoi ne repart pas en cumul : la tâche a déjà été envoyée une fois (cumul figé).
+  const penalty = await syncTaskPenalty(updated, await loadPenaltySettings())
+  sendJson(ctx.res, 200, { task: toTask(updated, { includeMargin: isAdminActor(ctx), includePayout: payoutVisible(ctx, task.assignedUserId), includePenalty: penaltyVisible(ctx, task.assignedUserId), penalty }) })
 }
 export const taskRoutes: RouteDefinition[] = [
   { method: 'GET', path: '/api/tasks', auth: true, middlewares: [requireAuth], handler: listTasks },
