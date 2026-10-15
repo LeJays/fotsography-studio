@@ -106,6 +106,24 @@ const createTask = async (ctx: RouteContext): Promise<void> => {
   if (!activity) throw new HttpError(404, 'Activité introuvable.')
   const member = await prisma.user.findFirst({ where: { id: data.assignedUserId, archivedAt: null, isActive: true, role: { not: 'CLIENT' } } })
   if (!member) throw new HttpError(404, 'Membre introuvable ou inactif.')
+
+  // Validation du plafond budgétaire : la part client d'une tâche ne peut pas dépasser
+  // ce qui reste disponible sur le montant total du projet.
+  if (isAdmin && data.clientPriceShare != null && data.clientPriceShare > 0) {
+    const agg = await prisma.task.aggregate({
+      where: { archivedAt: null, activity: { projectId: activity.projectId } },
+      _sum: { clientPriceShare: true },
+    })
+    const alreadyAllocated = agg._sum.clientPriceShare ?? 0
+    const remainingBudget = activity.project.totalAmount - alreadyAllocated
+    if (data.clientPriceShare > remainingBudget) {
+      throw new HttpError(
+        400,
+        `Le montant demandé au client (${formatAmount(data.clientPriceShare)}) dépasse le budget restant du projet (${formatAmount(remainingBudget)}).`,
+      )
+    }
+  }
+
   // Les montants ne sont fixés que par l'admin : un assistant distribue la tâche sans saisir d'argent.
   // Une tâche assignée à l'admin ne porte aucune rémunération membre : seul le montant client est suivi.
   const defaultDelivery = computeTaskDeliveryDate(activity.project.globalDeliveryDate)
@@ -132,14 +150,30 @@ const createTask = async (ctx: RouteContext): Promise<void> => {
 }
 const updateTask = async (ctx: RouteContext): Promise<void> => {
   const isAdmin = isAdminActor(ctx)
-  const task = await prisma.task.findFirst({ where: { id: ctx.params.id, archivedAt: null } })
+  const task = await prisma.task.findFirst({ where: { id: ctx.params.id, archivedAt: null }, include: { activity: { select: { projectId: true, project: { select: { totalAmount: true } } } } } })
   if (!task) throw new HttpError(404, 'Tâche introuvable.')
   const data = bodyOf<{ assignedUserId?: string; name?: string; description?: string; deliveryDate?: string; clientPriceShare?: number; memberPayout?: number }>(ctx)
   // Rôle du responsable final (nouveau ou actuel) : l'admin ne perçoit pas de rémunération membre.
   const targetUserId = data.assignedUserId ?? task.assignedUserId
   const member = await prisma.user.findFirst({ where: { id: targetUserId, archivedAt: null, isActive: true, role: { not: 'CLIENT' } } })
   if (data.assignedUserId && !member) throw new HttpError(404, 'Membre introuvable ou inactif.')
-  
+
+  // Validation du plafond budgétaire à la modification : on exclut la tâche elle-même du calcul.
+  if (isAdmin && data.clientPriceShare != null && data.clientPriceShare > 0) {
+    const agg = await prisma.task.aggregate({
+      where: { archivedAt: null, activity: { projectId: task.activity.projectId }, NOT: { id: task.id } },
+      _sum: { clientPriceShare: true },
+    })
+    const alreadyAllocated = agg._sum.clientPriceShare ?? 0
+    const remainingBudget = task.activity.project.totalAmount - alreadyAllocated
+    if (data.clientPriceShare > remainingBudget) {
+      throw new HttpError(
+        400,
+        `Le montant demandé au client (${formatAmount(data.clientPriceShare)}) dépasse le budget restant du projet (${formatAmount(remainingBudget)}).`,
+      )
+    }
+  }
+
   const customDelivery = data.deliveryDate ? fromDateInputValue(data.deliveryDate) : undefined
 
   // Un assistant peut réassigner ou renommer une tâche, mais ne touche jamais aux montants.

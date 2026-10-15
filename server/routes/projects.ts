@@ -61,8 +61,19 @@ const getProject = async (ctx: RouteContext): Promise<void> => {
   if (!project) throw new HttpError(404, 'Projet introuvable.')
   const isAdmin = ctx.actor?.role === 'ADMIN'
   const summary = toProjectSummary(project, isAdmin)
+
+  // Somme des parts client allouées aux tâches (réservée à l'admin).
+  let taskAllocatedAmount = 0
+  if (isAdmin) {
+    const taskAgg = await prisma.task.aggregate({
+      where: { archivedAt: null, activity: { projectId: project.id } },
+      _sum: { clientPriceShare: true },
+    })
+    taskAllocatedAmount = taskAgg._sum.clientPriceShare ?? 0
+  }
+
   // Paiements, reçus et dépenses restent réservés à l'admin.
-  const detail: ProjectDetail = { ...summary, notes: project.notes, clientPhone: project.client.phone ?? null, clientEmail: project.client.email ?? null, payments: isAdmin ? project.payments.map(toPayment) : [], receipts: isAdmin ? project.receipts.map(toReceipt) : [], expenses: isAdmin ? project.activities.flatMap((activity) => activity.expenses.map((expense) => ({ id: expense.id, activityName: activity.name, description: expense.description, supplier: expense.supplier, amount: expense.amount, expenseDate: expense.expenseDate.toISOString() }))) : [] }
+  const detail: ProjectDetail = { ...summary, notes: project.notes, clientPhone: project.client.phone ?? null, clientEmail: project.client.email ?? null, payments: isAdmin ? project.payments.map(toPayment) : [], receipts: isAdmin ? project.receipts.map(toReceipt) : [], expenses: isAdmin ? project.activities.flatMap((activity) => activity.expenses.map((expense) => ({ id: expense.id, activityName: activity.name, description: expense.description, supplier: expense.supplier, amount: expense.amount, expenseDate: expense.expenseDate.toISOString() }))) : [], taskAllocatedAmount }
   sendJson(ctx.res, 200, { project: detail })
 }
 

@@ -9,6 +9,7 @@ import { useAuth } from '../../context/AuthContext'
 import { ApiError, fetchFinances, fetchMyTasks, fetchOperationsOverview, fetchProjects, fetchTasks } from '../../lib/api'
 import { computeMemberStats, computeStudyStats, percent } from '../../lib/taskStats'
 import { MemberStatsPanel } from './MemberStatsPanel'
+import { ProjectBarsChart, ProjectFinanceBar, RevenueDonut } from './FinanceCharts'
 
 const emptyFinance: FinanceOverview = { totalRevenue: 0, collected: 0, remaining: 0, expenses: 0, memberPayouts: 0, netMargin: 0, projects: [], members: [] }
 const emptyOperations: OperationsOverview = { projects: [], totalTaskCount: 0, pendingTaskCount: 0, reviewTaskCount: 0, completedTaskCount: 0 }
@@ -90,7 +91,59 @@ export const DashboardPage = () => {
       </div>
     </> : isAdmin ? <>
       <div className="studio-stagger grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><StatCard label="Projets en cours" value={active.length.toString()} icon={<FolderKanban className="h-5 w-5" />} /><StatCard label="Encaissé" value={formatAmount(finance.collected)} icon={<CircleDollarSign className="h-5 w-5" />} /><StatCard label="Reste à encaisser" value={formatAmount(finance.remaining)} /><StatCard label="Marge nette" value={formatAmount(finance.netMargin)} /></div>
-      <div className="studio-stagger grid gap-5 xl:grid-cols-2"><Card><h2 className="font-serif text-xl font-bold">Projets à suivre</h2><div className="mt-4 space-y-4">{active.length ? active.map((project) => <Link key={project.id} to={`/projets/${project.id}`} className="block rounded-lg border border-studio-dark/10 p-3 hover:bg-studio-dark/[0.02]"><div className="flex justify-between gap-3"><div><strong>{project.eventName}</strong><p className="text-xs text-studio-dark/50">{project.clientName}</p></div><span className="text-sm font-semibold">{formatAmount(project.remainingAmount)}</span></div><div className="mt-2"><ProgressBar value={paymentPercent(project)} tone="auto" label={false} /></div></Link>) : <EmptyState icon={<FolderKanban className="h-5 w-5" />} title="Aucun projet en cours" description="Les projets actifs apparaîtront ici." />}</div></Card><Card><h2 className="font-serif text-xl font-bold">Prochaines échéances</h2><div className="mt-4 space-y-3">{upcoming.length ? upcoming.map((task) => <div key={task.id} className="flex items-center justify-between gap-3 border-b border-studio-dark/10 pb-3"><div><strong className="text-sm">{task.name}</strong><p className="text-xs text-studio-dark/50">{task.assignedUserName} · {task.projectName}</p></div><span className="text-xs font-semibold text-studio-terracotta">{formatDateShort(task.deliveryDate)}</span></div>) : <EmptyState icon={<ListChecks className="h-5 w-5" />} title="Aucune échéance" description="Les tâches attribuées apparaîtront ici." />}</div></Card></div>
+
+      {/* ── Graphiques financiers ── */}
+      <div className="studio-stagger grid gap-5 xl:grid-cols-2">
+        <RevenueDonut finance={finance} />
+        <ProjectBarsChart projects={finance.projects} />
+      </div>
+
+      <div className="studio-stagger grid gap-5 xl:grid-cols-2">
+        <Card>
+          <h2 className="font-serif text-xl font-bold">Projets à suivre</h2>
+          <div className="mt-4 space-y-4">
+            {active.length ? active.map((project) => {
+              const fp = finance.projects.find((p) => p.id === project.id)
+              return (
+                <Link key={project.id} to={`/projets/${project.id}`} className="block rounded-lg border border-studio-dark/10 p-3 hover:bg-studio-dark/[0.02]">
+                  <div className="flex justify-between gap-3">
+                    <div>
+                      <strong>{project.eventName}</strong>
+                      <p className="text-xs text-studio-dark/50">{project.clientName}</p>
+                    </div>
+                    <span className="text-sm font-semibold">{formatAmount(project.remainingAmount)}</span>
+                  </div>
+                  <div className="mt-2">
+                    {fp ? (
+                      <ProjectFinanceBar
+                        totalAmount={fp.totalAmount}
+                        paidAmount={fp.paidAmount}
+                        expenseAmount={fp.expenseAmount}
+                      />
+                    ) : (
+                      <ProgressBar value={paymentPercent(project)} tone="auto" label={false} />
+                    )}
+                  </div>
+                </Link>
+              )
+            }) : <EmptyState icon={<FolderKanban className="h-5 w-5" />} title="Aucun projet en cours" description="Les projets actifs apparaîtront ici." />}
+          </div>
+        </Card>
+        <Card>
+          <h2 className="font-serif text-xl font-bold">Prochaines échéances</h2>
+          <div className="mt-4 space-y-3">
+            {upcoming.length ? upcoming.map((task) => (
+              <div key={task.id} className="flex items-center justify-between gap-3 border-b border-studio-dark/10 pb-3">
+                <div>
+                  <strong className="text-sm">{task.name}</strong>
+                  <p className="text-xs text-studio-dark/50">{task.assignedUserName} · {task.projectName}</p>
+                </div>
+                <span className="text-xs font-semibold text-studio-terracotta">{formatDateShort(task.deliveryDate)}</span>
+              </div>
+            )) : <EmptyState icon={<ListChecks className="h-5 w-5" />} title="Aucune échéance" description="Les tâches attribuées apparaîtront ici." />}
+          </div>
+        </Card>
+      </div>
       <Card>
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <div>

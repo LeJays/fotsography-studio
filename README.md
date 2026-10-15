@@ -213,7 +213,7 @@ base de développement sans risque pour les données réelles.
 4. La réponse pose un cookie de session httpOnly signé (`JWT_SECRET`) et ouvre l'application.
 
 La connexion (`POST /api/auth/login`) accepte indifféremment l'**adresse email** ou le
-**nom complet** (`James Walter`), puis compare le mot de passe au hash scrypt stocké. Une
+**nom complet** (`Adriel Fotso`), puis compare le mot de passe au hash scrypt stocké. Une
 session dure 7 jours ; le renouvellement se fait par `POST /api/auth/password` (mot de passe
 actuel obligatoire) ou par réinitialisation côté admin.
 
@@ -232,3 +232,6 @@ compilé (`dist/`). Variables à définir : `DATABASE_URL`, `JWT_SECRET`, `COOKI
 - L'étape « code de vérification » est purement locale : aucun email n'est envoyé.
 - Les tâches restantes : renouvellement automatique des identifiants, limitation de débit
   sur la connexion, journal d'audit consultable depuis l'interface.
+
+  ## Prochaines modifications
+  Tu vois je voudrais si possible les notifications du genre quand on attribue une tâche à une personne il reçoit une notification sur son téléphone, de même chez l'admin tu comprends et tu peux me proposer tous les cas pour les notification dans le projet sans code propose d'abord

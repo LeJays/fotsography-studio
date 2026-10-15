@@ -163,6 +163,8 @@ export interface ProjectDetail extends ProjectSummary {
   payments: PaymentSummary[]
   receipts: ReceiptSummary[]
   expenses: ProjectExpenseSummary[]
+  /** Somme des parts client (clientPriceShare) attribuées aux tâches du projet. */
+  taskAllocatedAmount: number
 }
 
 export interface ProjectExpenseSummary {
